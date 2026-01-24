@@ -197,10 +197,14 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
       }
 
       // Handle terminal input - ghostty-web uses onData like xterm
+      // Send as binary (Uint8Array) because Sprites API expects binary stdin
       term.onData((data: string) => {
         console.log("[Terminal] Input:", JSON.stringify(data))
         if (ws.readyState === WebSocket.OPEN) {
-          ws.send(data)
+          // Convert string to binary - Sprites API expects binary frames for stdin
+          const encoder = new TextEncoder()
+          const binaryData = encoder.encode(data)
+          ws.send(binaryData)
         }
       })
 

@@ -12,7 +12,8 @@ import type {
   UrlSettings,
 } from "@/types/sprites"
 
-const API_BASE = process.env.NEXT_PUBLIC_SPRITES_API_URL || "https://api.sprites.dev/v1"
+// Use local API proxy to avoid CORS issues
+const API_BASE = "/api"
 
 export class SpritesApiError extends Error {
   constructor(
@@ -89,7 +90,6 @@ export class SpritesClient {
     }
 
     const decoder = new TextDecoder()
-    const self = this
 
     return (async function* () {
       let buffer = ""
@@ -184,8 +184,8 @@ export class SpritesClient {
   }
 
   getExecWebSocketUrl(name: string): string {
-    const wsBase = this.baseUrl.replace("https://", "wss://").replace("http://", "ws://")
-    return `${wsBase}/sprites/${encodeURIComponent(name)}/exec?token=${this.token}`
+    // WebSocket connections go direct to the API
+    return `wss://api.sprites.dev/v1/sprites/${encodeURIComponent(name)}/exec?token=${this.token}`
   }
 
   // =====================================
@@ -206,8 +206,7 @@ export class SpritesClient {
   }
 
   getSessionWebSocketUrl(name: string, sessionId: string): string {
-    const wsBase = this.baseUrl.replace("https://", "wss://").replace("http://", "ws://")
-    return `${wsBase}/sprites/${encodeURIComponent(name)}/sessions/${sessionId}?token=${this.token}`
+    return `wss://api.sprites.dev/v1/sprites/${encodeURIComponent(name)}/sessions/${sessionId}?token=${this.token}`
   }
 
   // =====================================
@@ -231,7 +230,7 @@ export class SpritesClient {
     name: string,
     checkpointName?: string
   ): Promise<AsyncGenerator<ProgressEvent>> {
-    return this.streamRequest(`/sprites/${encodeURIComponent(name)}/checkpoint`, {
+    return this.streamRequest(`/sprites/${encodeURIComponent(name)}/checkpoints`, {
       method: "POST",
       body: JSON.stringify({ name: checkpointName }),
     })
@@ -295,8 +294,7 @@ export class SpritesClient {
   // =====================================
 
   getPortTunnelWebSocketUrl(name: string, port: number): string {
-    const wsBase = this.baseUrl.replace("https://", "wss://").replace("http://", "ws://")
-    return `${wsBase}/sprites/${encodeURIComponent(name)}/tunnel/${port}?token=${this.token}`
+    return `wss://api.sprites.dev/v1/sprites/${encodeURIComponent(name)}/tunnel/${port}?token=${this.token}`
   }
 }
 

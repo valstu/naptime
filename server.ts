@@ -25,9 +25,12 @@ app.prepare().then(() => {
   server.on("upgrade", (request: IncomingMessage, socket, head) => {
     const { pathname, query } = parse(request.url || "", true)
 
-    // Only handle /ws/exec/* paths
+    // Handle /ws/exec/* paths (new session or attach to existing)
+    // Format: /ws/exec/{spriteName} or /ws/exec/{spriteName}/{sessionId}
     if (pathname?.startsWith("/ws/exec/")) {
-      const spriteName = pathname.replace("/ws/exec/", "")
+      const pathParts = pathname.replace("/ws/exec/", "").split("/")
+      const spriteName = pathParts[0]
+      const sessionId = pathParts[1] // Optional - for attaching to existing session
       const token = query.token as string
 
       if (!spriteName || !token) {
@@ -37,7 +40,7 @@ app.prepare().then(() => {
       }
 
       wss.handleUpgrade(request, socket, head, (clientWs) => {
-        handleExecProxy(clientWs, spriteName, token, query)
+        handleExecProxy(clientWs, spriteName, token, query, sessionId)
       })
     } else {
       socket.write("HTTP/1.1 404 Not Found\r\n\r\n")
@@ -47,7 +50,6 @@ app.prepare().then(() => {
 
   server.listen(port, () => {
     console.log(`> Ready on http://${hostname}:${port}`)
-    console.log(`> WebSocket proxy enabled at ws://${hostname}:${port}/ws/exec/[spriteName]`)
   })
 })
 
@@ -55,36 +57,40 @@ function handleExecProxy(
   clientWs: WebSocket,
   spriteName: string,
   token: string,
-  query: Record<string, string | string[] | undefined>
+  query: Record<string, string | string[] | undefined>,
+  sessionId?: string
 ) {
-  // Build the Sprites API WebSocket URL with query params
-  const params = new URLSearchParams()
+  let spritesWsUrl: string
 
-  // Command path
-  const command = (query.path as string) || "/bin/bash"
-  params.set("path", command)
-
-  // Command args
-  const cmds = query.cmd
-  if (Array.isArray(cmds)) {
-    cmds.forEach((cmd) => params.append("cmd", cmd))
-  } else if (cmds) {
-    params.append("cmd", cmds)
+  if (sessionId) {
+    // Attach to existing session
+    spritesWsUrl = `${SPRITES_API_WS}/v1/sprites/${encodeURIComponent(spriteName)}/exec/${sessionId}`
+    console.log(`[WS] Attaching to session ${sessionId} on ${spriteName}`)
   } else {
-    params.append("cmd", command)
+    // New session - build URL with query params
+    const params = new URLSearchParams()
+
+    const command = (query.path as string) || "/bin/bash"
+    params.set("path", command)
+
+    const cmds = query.cmd
+    if (Array.isArray(cmds)) {
+      cmds.forEach((cmd) => params.append("cmd", cmd))
+    } else if (cmds) {
+      params.append("cmd", cmds)
+    } else {
+      params.append("cmd", command)
+    }
+
+    if (query.stdin) params.set("stdin", query.stdin as string)
+    if (query.tty) params.set("tty", query.tty as string)
+    if (query.rows) params.set("rows", query.rows as string)
+    if (query.cols) params.set("cols", query.cols as string)
+    if (query.detachable) params.set("detachable", query.detachable as string)
+
+    spritesWsUrl = `${SPRITES_API_WS}/v1/sprites/${encodeURIComponent(spriteName)}/exec?${params.toString()}`
+    console.log(`[WS] New session on ${spriteName}`)
   }
-
-  // Other params
-  if (query.stdin) params.set("stdin", query.stdin as string)
-  if (query.tty) params.set("tty", query.tty as string)
-  if (query.rows) params.set("rows", query.rows as string)
-  if (query.cols) params.set("cols", query.cols as string)
-
-  const spritesWsUrl = `${SPRITES_API_WS}/v1/sprites/${encodeURIComponent(spriteName)}/exec?${params.toString()}`
-
-  console.log(`[WS Proxy] Connecting to Sprites API for ${spriteName}`)
-  console.log(`[WS Proxy] URL: ${spritesWsUrl}`)
-  console.log(`[WS Proxy] Params: ${params.toString()}`)
 
   // Connect to Sprites API with Authorization header
   const spritesWs = new WebSocket(spritesWsUrl, {
@@ -93,16 +99,11 @@ function handleExecProxy(
     },
   })
 
-  let spritesReady = false
   const messageBuffer: { data: any; isBinary: boolean }[] = []
 
   spritesWs.on("open", () => {
-    spritesReady = true
-    console.log(`[WS Proxy] Connected to Sprites API!`)
-
     // Send any buffered messages
     if (messageBuffer.length > 0) {
-      console.log(`[WS Proxy] Sending ${messageBuffer.length} buffered messages`)
       messageBuffer.forEach(({ data, isBinary }) => {
         spritesWs.send(data, { binary: isBinary })
       })
@@ -111,63 +112,52 @@ function handleExecProxy(
   })
 
   spritesWs.on("message", (data, isBinary) => {
-    // Forward message from Sprites API to client
     if (clientWs.readyState === WebSocket.OPEN) {
-      console.log(`[WS Proxy] Sprites -> Client: ${isBinary ? 'binary' : 'text'} (${Buffer.isBuffer(data) ? data.length : data.toString().length} bytes)`)
       clientWs.send(data, { binary: isBinary })
     }
   })
 
   spritesWs.on("close", (code, reason) => {
-    console.log(`[WS Proxy] Sprites connection closed: ${code} ${reason.toString()}`)
     if (clientWs.readyState === WebSocket.OPEN) {
       clientWs.close(code, reason.toString())
     }
   })
 
   spritesWs.on("error", (err) => {
-    console.error(`[WS Proxy] Sprites connection error:`, err.message)
-    console.error(`[WS Proxy] Error details:`, err)
+    console.error(`[WS] Error:`, err.message)
     if (clientWs.readyState === WebSocket.OPEN) {
       clientWs.close(1011, "Upstream error")
     }
   })
 
-  // Handle unexpected HTTP responses (like 401, 403, 404, etc.)
   spritesWs.on("unexpected-response", (req, res) => {
-    console.error(`[WS Proxy] Unexpected response from Sprites API: ${res.statusCode} ${res.statusMessage}`)
+    console.error(`[WS] Sprites API error: ${res.statusCode}`)
     let body = ""
     res.on("data", (chunk) => { body += chunk })
     res.on("end", () => {
-      console.error(`[WS Proxy] Response body: ${body}`)
+      if (body) console.error(`[WS] Response: ${body}`)
       if (clientWs.readyState === WebSocket.OPEN) {
         clientWs.close(1011, `Upstream error: ${res.statusCode}`)
       }
     })
   })
 
-  // Forward messages from client to Sprites API
   clientWs.on("message", (data, isBinary) => {
     if (spritesWs.readyState === WebSocket.OPEN) {
-      console.log(`[WS Proxy] Client -> Sprites: ${isBinary ? 'binary' : 'text'} "${Buffer.isBuffer(data) ? data.toString() : data}"`)
       spritesWs.send(data, { binary: isBinary })
     } else if (spritesWs.readyState === WebSocket.CONNECTING) {
-      console.log(`[WS Proxy] Buffering client message - Sprites WS still connecting`)
       messageBuffer.push({ data, isBinary })
-    } else {
-      console.log(`[WS Proxy] Client message dropped - Sprites WS not ready (state: ${spritesWs.readyState})`)
     }
   })
 
-  clientWs.on("close", (code, reason) => {
-    console.log(`[WS Proxy] Client disconnected: ${code}`)
+  clientWs.on("close", () => {
     if (spritesWs.readyState === WebSocket.OPEN) {
       spritesWs.close()
     }
   })
 
   clientWs.on("error", (err) => {
-    console.error(`[WS Proxy] Client error:`, err.message)
+    console.error(`[WS] Client error:`, err.message)
     if (spritesWs.readyState === WebSocket.OPEN) {
       spritesWs.close()
     }

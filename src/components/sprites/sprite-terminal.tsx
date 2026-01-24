@@ -3,22 +3,39 @@
 import { useEffect, useRef, useState, useCallback } from "react"
 import { useSprites } from "@/contexts/sprites-context"
 import { Button } from "@/components/ui/button"
-import { RotateCcw, Maximize2, Minimize2 } from "lucide-react"
+import { RotateCcw, Maximize2, Minimize2, Unplug } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface SpriteTerminalProps {
   spriteName: string
+  sessionId?: number  // Optional - attach to existing session
+  detachable?: boolean  // Create a persistent session
+  onSessionCreated?: (sessionId: number) => void  // Callback when new session is created
 }
 
-function getWebSocketProxyUrl(spriteName: string, token: string, options: {
-  command?: string
-  tty?: boolean
-  rows?: number
-  cols?: number
-}): string {
+function getWebSocketProxyUrl(
+  spriteName: string,
+  token: string,
+  options: {
+    command?: string
+    tty?: boolean
+    rows?: number
+    cols?: number
+    detachable?: boolean
+    sessionId?: number
+  }
+): string {
   const protocol = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss:" : "ws:"
   const host = typeof window !== "undefined" ? window.location.host : "localhost:3000"
 
+  // If attaching to existing session, use different URL format
+  if (options.sessionId) {
+    const params = new URLSearchParams()
+    params.set("token", token)
+    return `${protocol}//${host}/ws/exec/${encodeURIComponent(spriteName)}/${options.sessionId}?${params.toString()}`
+  }
+
+  // New session
   const params = new URLSearchParams()
   params.set("token", token)
 
@@ -33,10 +50,19 @@ function getWebSocketProxyUrl(spriteName: string, token: string, options: {
     if (options.cols) params.set("cols", String(options.cols))
   }
 
+  if (options.detachable) {
+    params.set("detachable", "true")
+  }
+
   return `${protocol}//${host}/ws/exec/${encodeURIComponent(spriteName)}?${params.toString()}`
 }
 
-export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
+export function SpriteTerminal({
+  spriteName,
+  sessionId: initialSessionId,
+  detachable = true,  // Default to detachable sessions
+  onSessionCreated
+}: SpriteTerminalProps) {
   const { token } = useSprites()
   const terminalRef = useRef<HTMLDivElement>(null)
   const terminalInstance = useRef<any>(null)
@@ -46,8 +72,9 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
   const [isConnecting, setIsConnecting] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [currentSessionId, setCurrentSessionId] = useState<number | undefined>(initialSessionId)
 
-  const connect = useCallback(async () => {
+  const connect = useCallback(async (attachToSession?: number) => {
     if (!token || !terminalRef.current) {
       setError("Not authenticated or terminal not ready")
       return
@@ -105,9 +132,10 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
       term.open(terminalRef.current)
       terminalInstance.current = term
 
-      // Use fixed terminal size - ghostty-web doesn't report size until later
       const rows = 24
       const cols = 80
+
+      const sessionToAttach = attachToSession || currentSessionId
 
       // Get WebSocket URL through our proxy
       const wsUrl = getWebSocketProxyUrl(spriteName, token, {
@@ -115,26 +143,29 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
         tty: true,
         rows,
         cols,
+        detachable,
+        sessionId: sessionToAttach,
       })
-
-      console.log("[Terminal] Using size:", cols, "x", rows)
 
       // Write welcome message
       term.write("\x1b[38;5;208m") // Orange color
       term.write("┌─────────────────────────────────────────────────────┐\r\n")
       term.write(`│  SPRITES TERMINAL - ${spriteName.padEnd(30)}│\r\n`)
       term.write("├─────────────────────────────────────────────────────┤\r\n")
-      term.write("│  Connecting via WebSocket proxy...                  │\r\n")
+      if (sessionToAttach) {
+        term.write(`│  Attaching to session ${String(sessionToAttach).padEnd(28)}│\r\n`)
+      } else {
+        term.write(`│  Creating ${detachable ? "persistent" : "ephemeral"} session...                   │\r\n`)
+      }
       term.write("└─────────────────────────────────────────────────────┘\r\n")
       term.write("\x1b[0m") // Reset color
       term.write("\r\n")
 
-      // Connect WebSocket - use text mode like ghostty-web demo
+      // Connect WebSocket
       const ws = new WebSocket(wsUrl)
       wsRef.current = ws
 
       ws.onopen = () => {
-        console.log("[Terminal] WebSocket connected")
         setIsConnected(true)
         setIsConnecting(false)
         term.write("\x1b[32m● Connected\x1b[0m\r\n\r\n")
@@ -142,16 +173,12 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
       }
 
       ws.onmessage = (event) => {
-        console.log("[Terminal] Received:", typeof event.data, event.data instanceof ArrayBuffer ? `ArrayBuffer(${event.data.byteLength})` : JSON.stringify(event.data).slice(0, 100))
-
         // Handle both binary and text data
         if (event.data instanceof ArrayBuffer) {
           const text = new TextDecoder().decode(event.data)
-          console.log("[Terminal] Decoded ArrayBuffer:", JSON.stringify(text).slice(0, 100))
           term.write(text)
         } else if (event.data instanceof Blob) {
           event.data.text().then((text) => {
-            console.log("[Terminal] Decoded Blob:", JSON.stringify(text).slice(0, 100))
             term.write(text)
           })
         } else if (typeof event.data === "string") {
@@ -159,19 +186,17 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
           try {
             const msg = JSON.parse(event.data)
             if (msg.type === "session_info") {
-              // Session info - don't display, just log it
-              console.log("[Terminal] Session info:", msg)
+              // Store session ID for potential reconnection
+              setCurrentSessionId(msg.session_id)
+              onSessionCreated?.(msg.session_id)
             } else if (msg.type === "exit") {
               term.write(`\r\n\x1b[33m● Process exited with code ${msg.exit_code || msg.code || 0}\x1b[0m\r\n`)
               setIsConnected(false)
             } else if (msg.type === "port") {
-              // Port notification - don't display
-              console.log("[Terminal] Port notification:", msg)
+              // Port notification
+              term.write(`\r\n\x1b[36m● Port ${msg.port} available\x1b[0m\r\n`)
             } else if (msg.error) {
               term.write(`\r\n\x1b[31m● Error: ${msg.error}\x1b[0m\r\n`)
-            } else {
-              // Unknown JSON message type - log but don't display
-              console.log("[Terminal] Unknown JSON message:", msg)
             }
           } catch {
             // Not JSON, write directly to terminal (this is actual shell output)
@@ -180,31 +205,28 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
         }
       }
 
-      ws.onerror = (e) => {
-        console.error("[Terminal] WebSocket error:", e)
+      ws.onerror = () => {
         setError("WebSocket connection failed")
         setIsConnecting(false)
         term.write("\r\n\x1b[31m● Connection error\x1b[0m\r\n")
       }
 
       ws.onclose = (e) => {
-        console.log("[Terminal] WebSocket closed:", e.code, e.reason)
         setIsConnected(false)
         setIsConnecting(false)
         if (e.code !== 1000) {
           term.write(`\r\n\x1b[33m● Disconnected (code: ${e.code})\x1b[0m\r\n`)
+          if (currentSessionId && detachable) {
+            term.write("\x1b[90mSession preserved - click reconnect to resume\x1b[0m\r\n")
+          }
         }
       }
 
-      // Handle terminal input - ghostty-web uses onData like xterm
-      // Send as binary (Uint8Array) because Sprites API expects binary stdin
+      // Handle terminal input - send as binary (Sprites API expects binary stdin)
       term.onData((data: string) => {
-        console.log("[Terminal] Input:", JSON.stringify(data))
         if (ws.readyState === WebSocket.OPEN) {
-          // Convert string to binary - Sprites API expects binary frames for stdin
           const encoder = new TextEncoder()
-          const binaryData = encoder.encode(data)
-          ws.send(binaryData)
+          ws.send(encoder.encode(data))
         }
       })
 
@@ -213,7 +235,7 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
       setError(err instanceof Error ? err.message : "Failed to initialize terminal")
       setIsConnecting(false)
     }
-  }, [token, spriteName])
+  }, [token, spriteName, currentSessionId, detachable, onSessionCreated])
 
   const disconnect = useCallback(() => {
     if (wsRef.current) {
@@ -225,7 +247,14 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
 
   const reconnect = useCallback(() => {
     disconnect()
-    setTimeout(connect, 100)
+    // Reconnect to same session if we have one, otherwise create new
+    setTimeout(() => connect(currentSessionId), 100)
+  }, [disconnect, connect, currentSessionId])
+
+  const newSession = useCallback(() => {
+    disconnect()
+    setCurrentSessionId(undefined)
+    setTimeout(() => connect(), 100)
   }, [disconnect, connect])
 
   // Connect on mount
@@ -266,17 +295,35 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
           <span>
             {isConnected ? "Connected" : isConnecting ? "Connecting..." : "Disconnected"}
           </span>
+          {currentSessionId && (
+            <>
+              <span className="text-border">│</span>
+              <span className="font-mono text-muted-foreground/70">#{currentSessionId}</span>
+            </>
+          )}
           <span className="text-border">│</span>
           <span className="font-mono">{spriteName}</span>
         </div>
         <div className="flex items-center gap-1">
+          {currentSessionId && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2"
+              onClick={newSession}
+              disabled={isConnecting}
+              title="New session"
+            >
+              <Unplug className="h-3 w-3" />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"
             className="h-7 px-2"
             onClick={reconnect}
             disabled={isConnecting}
-            title="Reconnect"
+            title={currentSessionId ? "Reconnect to session" : "Reconnect"}
           >
             <RotateCcw className="h-3 w-3" />
           </Button>
@@ -314,7 +361,9 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
       {/* Status bar */}
       <div className="px-4 py-1 border-t border-border bg-muted/30 text-xs text-muted-foreground">
         {isConnected ? (
-          <span>Interactive shell • Click terminal to focus • Type commands directly</span>
+          <span>Interactive shell • {detachable ? "Session persists on disconnect" : "Ephemeral session"}</span>
+        ) : currentSessionId ? (
+          <span>Session #{currentSessionId} • Click reconnect to resume</span>
         ) : (
           <span>Click reconnect to start a new session</span>
         )}

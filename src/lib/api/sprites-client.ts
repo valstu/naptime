@@ -137,27 +137,29 @@ export class SpritesClient {
     return this.request<Sprite>(`/sprites/${encodeURIComponent(name)}`)
   }
 
-  async listSprites(options?: ListOptions): Promise<PaginatedResponse<Sprite>> {
+  async listSprites(options?: ListOptions): Promise<{ sprites: Sprite[]; cursor?: string; has_more?: boolean }> {
     const params = new URLSearchParams()
     if (options?.prefix) params.set("prefix", options.prefix)
     if (options?.limit) params.set("limit", options.limit.toString())
     if (options?.cursor) params.set("cursor", options.cursor)
 
     const query = params.toString()
-    return this.request<PaginatedResponse<Sprite>>(`/sprites${query ? `?${query}` : ""}`)
+    return this.request<{ sprites: Sprite[]; cursor?: string; has_more?: boolean }>(`/sprites${query ? `?${query}` : ""}`)
   }
 
   async listAllSprites(prefix?: string): Promise<Sprite[]> {
-    const sprites: Sprite[] = []
+    const allSprites: Sprite[] = []
     let cursor: string | undefined
 
     do {
       const response = await this.listSprites({ prefix, cursor })
-      sprites.push(...response.items)
+      // API returns sprites array, not items
+      const spriteList = response.sprites || []
+      allSprites.push(...spriteList)
       cursor = response.cursor
     } while (cursor)
 
-    return sprites
+    return allSprites
   }
 
   async deleteSprite(name: string): Promise<void> {

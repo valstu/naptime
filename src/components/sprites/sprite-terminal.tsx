@@ -105,13 +105,19 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
       term.open(terminalRef.current)
       terminalInstance.current = term
 
+      // Use fixed terminal size - ghostty-web doesn't report size until later
+      const rows = 24
+      const cols = 80
+
       // Get WebSocket URL through our proxy
       const wsUrl = getWebSocketProxyUrl(spriteName, token, {
         command: "/bin/bash",
         tty: true,
-        rows: term.rows || 24,
-        cols: term.cols || 80,
+        rows,
+        cols,
       })
+
+      console.log("[Terminal] Using size:", cols, "x", rows)
 
       // Write welcome message
       term.write("\x1b[38;5;208m") // Orange color
@@ -152,17 +158,23 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
           // Try to parse as JSON for control messages
           try {
             const msg = JSON.parse(event.data)
-            if (msg.type === "exit") {
+            if (msg.type === "session_info") {
+              // Session info - don't display, just log it
+              console.log("[Terminal] Session info:", msg)
+            } else if (msg.type === "exit") {
               term.write(`\r\n\x1b[33m● Process exited with code ${msg.exit_code || msg.code || 0}\x1b[0m\r\n`)
               setIsConnected(false)
+            } else if (msg.type === "port") {
+              // Port notification - don't display
+              console.log("[Terminal] Port notification:", msg)
             } else if (msg.error) {
               term.write(`\r\n\x1b[31m● Error: ${msg.error}\x1b[0m\r\n`)
             } else {
-              // Unknown JSON, just write it
-              term.write(event.data)
+              // Unknown JSON message type - log but don't display
+              console.log("[Terminal] Unknown JSON message:", msg)
             }
           } catch {
-            // Not JSON, write directly to terminal
+            // Not JSON, write directly to terminal (this is actual shell output)
             term.write(event.data)
           }
         }

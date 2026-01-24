@@ -83,6 +83,8 @@ function handleExecProxy(
   const spritesWsUrl = `${SPRITES_API_WS}/v1/sprites/${encodeURIComponent(spriteName)}/exec?${params.toString()}`
 
   console.log(`[WS Proxy] Connecting to Sprites API for ${spriteName}`)
+  console.log(`[WS Proxy] URL: ${spritesWsUrl}`)
+  console.log(`[WS Proxy] Params: ${params.toString()}`)
 
   // Connect to Sprites API with Authorization header
   const spritesWs = new WebSocket(spritesWsUrl, {
@@ -92,10 +94,20 @@ function handleExecProxy(
   })
 
   let spritesReady = false
+  const messageBuffer: { data: any; isBinary: boolean }[] = []
 
   spritesWs.on("open", () => {
     spritesReady = true
-    console.log(`[WS Proxy] Connected to Sprites API`)
+    console.log(`[WS Proxy] Connected to Sprites API!`)
+
+    // Send any buffered messages
+    if (messageBuffer.length > 0) {
+      console.log(`[WS Proxy] Sending ${messageBuffer.length} buffered messages`)
+      messageBuffer.forEach(({ data, isBinary }) => {
+        spritesWs.send(data, { binary: isBinary })
+      })
+      messageBuffer.length = 0
+    }
   })
 
   spritesWs.on("message", (data, isBinary) => {
@@ -115,9 +127,23 @@ function handleExecProxy(
 
   spritesWs.on("error", (err) => {
     console.error(`[WS Proxy] Sprites connection error:`, err.message)
+    console.error(`[WS Proxy] Error details:`, err)
     if (clientWs.readyState === WebSocket.OPEN) {
       clientWs.close(1011, "Upstream error")
     }
+  })
+
+  // Handle unexpected HTTP responses (like 401, 403, 404, etc.)
+  spritesWs.on("unexpected-response", (req, res) => {
+    console.error(`[WS Proxy] Unexpected response from Sprites API: ${res.statusCode} ${res.statusMessage}`)
+    let body = ""
+    res.on("data", (chunk) => { body += chunk })
+    res.on("end", () => {
+      console.error(`[WS Proxy] Response body: ${body}`)
+      if (clientWs.readyState === WebSocket.OPEN) {
+        clientWs.close(1011, `Upstream error: ${res.statusCode}`)
+      }
+    })
   })
 
   // Forward messages from client to Sprites API
@@ -125,6 +151,9 @@ function handleExecProxy(
     if (spritesWs.readyState === WebSocket.OPEN) {
       console.log(`[WS Proxy] Client -> Sprites: ${isBinary ? 'binary' : 'text'} "${Buffer.isBuffer(data) ? data.toString() : data}"`)
       spritesWs.send(data, { binary: isBinary })
+    } else if (spritesWs.readyState === WebSocket.CONNECTING) {
+      console.log(`[WS Proxy] Buffering client message - Sprites WS still connecting`)
+      messageBuffer.push({ data, isBinary })
     } else {
       console.log(`[WS Proxy] Client message dropped - Sprites WS not ready (state: ${spritesWs.readyState})`)
     }

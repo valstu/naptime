@@ -79,13 +79,8 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
       term.open(terminalRef.current)
       terminalInstance.current = term
 
-      // Get WebSocket URL with terminal size
-      const wsUrl = client.getExecWebSocketUrl(spriteName, {
-        command: "/bin/bash",
-        tty: true,
-        rows: term.rows || 24,
-        cols: term.cols || 80,
-      })
+      // Get WebSocket URL (token only - command sent after connect)
+      const wsUrl = client.getExecWebSocketUrl(spriteName)
 
       // Write welcome message
       term.write("\x1b[38;5;208m") // Orange color
@@ -105,6 +100,16 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
       ws.onopen = () => {
         setIsConnected(true)
         setIsConnecting(false)
+
+        // Send initial command to start bash shell with TTY
+        const initMessage = JSON.stringify({
+          command: "/bin/bash",
+          tty: true,
+          tty_rows: term.rows || 24,
+          tty_cols: term.cols || 80,
+        })
+        ws.send(initMessage)
+
         term.write("\x1b[32m● Connected\x1b[0m\r\n\r\n")
         term.focus()
       }

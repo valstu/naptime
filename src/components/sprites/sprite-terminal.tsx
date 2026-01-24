@@ -42,6 +42,7 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
   const terminalInstance = useRef<any>(null)
   const fitAddonRef = useRef<any>(null)
   const wsRef = useRef<WebSocket | null>(null)
+  const resizeHandlerRef = useRef<(() => void) | null>(null)
 
   const [isConnected, setIsConnected] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
@@ -63,7 +64,11 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
       const { FitAddon } = await import("@xterm/addon-fit")
       const { WebLinksAddon } = await import("@xterm/addon-web-links")
 
-      // Clean up existing terminal
+      // Clean up existing
+      if (resizeHandlerRef.current) {
+        window.removeEventListener("resize", resizeHandlerRef.current)
+        resizeHandlerRef.current = null
+      }
       if (terminalInstance.current) {
         terminalInstance.current.dispose()
       }
@@ -154,7 +159,6 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
           const text = new TextDecoder().decode(event.data)
           term.write(text)
         } else if (typeof event.data === "string") {
-          // Could be JSON control message or raw text
           try {
             const msg = JSON.parse(event.data)
             if (msg.type === "exit") {
@@ -164,7 +168,6 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
               term.write(`\r\n\x1b[31m● Error: ${msg.error}\x1b[0m\r\n`)
             }
           } catch {
-            // Not JSON, write raw text
             term.write(event.data)
           }
         }
@@ -188,40 +191,10 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
 
       // Handle terminal input
       term.onData((data: string) => {
-        console.log("[Terminal] Sending data:", JSON.stringify(data))
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(data)
         }
       })
-
-      // Handle terminal resize with debounce
-      let lastCols = term.cols
-      let lastRows = term.rows
-      let resizeTimeout: NodeJS.Timeout | null = null
-
-      const resizeObserver = new ResizeObserver(() => {
-        // Debounce resize events
-        if (resizeTimeout) clearTimeout(resizeTimeout)
-        resizeTimeout = setTimeout(() => {
-          fitAddon.fit()
-          // Only send if size actually changed
-          if (term.cols !== lastCols || term.rows !== lastRows) {
-            lastCols = term.cols
-            lastRows = term.rows
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({
-                type: "resize",
-                cols: term.cols,
-                rows: term.rows,
-              }))
-            }
-          }
-        }, 100)
-      })
-
-      if (terminalRef.current) {
-        resizeObserver.observe(terminalRef.current)
-      }
 
     } catch (err) {
       console.error("[Terminal] Init error:", err)
@@ -231,6 +204,10 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
   }, [token, spriteName])
 
   const disconnect = useCallback(() => {
+    if (resizeHandlerRef.current) {
+      window.removeEventListener("resize", resizeHandlerRef.current)
+      resizeHandlerRef.current = null
+    }
     if (wsRef.current) {
       wsRef.current.close()
       wsRef.current = null
@@ -248,6 +225,9 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
     connect()
 
     return () => {
+      if (resizeHandlerRef.current) {
+        window.removeEventListener("resize", resizeHandlerRef.current)
+      }
       if (wsRef.current) {
         wsRef.current.close()
       }
@@ -259,10 +239,6 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
 
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen)
-    // Re-fit after fullscreen toggle
-    setTimeout(() => {
-      fitAddonRef.current?.fit()
-    }, 100)
   }
 
   // Click to focus terminal

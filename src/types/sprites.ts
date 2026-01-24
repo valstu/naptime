@@ -20,7 +20,10 @@ export interface SpriteConfig {
 }
 
 export interface UrlSettings {
-  auth: "public" | "private" | "token"
+  auth?: "public" | "private" | "token" | "sprite"  // API uses "sprite" for authenticated
+  url?: string | null
+  url_auth?: string | null
+  hostname?: string | null
 }
 
 export interface Checkpoint {
@@ -56,10 +59,16 @@ export interface ExecResult {
 }
 
 export interface Session {
-  id: string
-  created_at: string
+  id: number | string
+  created_at?: string
+  created?: number  // Unix timestamp from API
   command: string
-  status: "active" | "detached" | "completed"
+  workdir?: string
+  status?: "active" | "detached" | "completed"
+  isActive?: boolean  // API uses this instead of status
+  tty?: boolean
+  lastActivity?: number
+  bytesPerSecond?: number
 }
 
 export interface ListOptions {

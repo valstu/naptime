@@ -29,7 +29,9 @@ interface UrlSettingsPanelProps {
   spriteName: string
 }
 
-const AUTH_OPTIONS: { value: UrlSettings["auth"]; label: string; description: string; icon: typeof Globe }[] = [
+type AuthMode = "public" | "private" | "token" | "sprite"
+
+const AUTH_OPTIONS: { value: AuthMode; label: string; description: string; icon: typeof Globe }[] = [
   {
     value: "public",
     label: "Public",
@@ -37,16 +39,10 @@ const AUTH_OPTIONS: { value: UrlSettings["auth"]; label: string; description: st
     icon: Globe,
   },
   {
-    value: "private",
-    label: "Private",
-    description: "Only you can access (requires authentication)",
+    value: "sprite",
+    label: "Authenticated",
+    description: "Requires sprite authentication",
     icon: Lock,
-  },
-  {
-    value: "token",
-    label: "Token",
-    description: "Access requires a bearer token",
-    icon: Key,
   },
 ]
 
@@ -54,8 +50,8 @@ export function UrlSettingsPanel({ spriteName }: UrlSettingsPanelProps) {
   const { urlSettings, updateUrlSettings, selectedSprite } = useSprites()
   const [isSaving, setIsSaving] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [selectedAuth, setSelectedAuth] = useState<UrlSettings["auth"]>(
-    urlSettings?.auth || "private"
+  const [selectedAuth, setSelectedAuth] = useState<AuthMode>(
+    (urlSettings?.auth || urlSettings?.url_auth || "sprite") as AuthMode
   )
 
   const handleSave = async () => {
@@ -135,7 +131,7 @@ export function UrlSettingsPanel({ spriteName }: UrlSettingsPanelProps) {
       <Card>
         <CardContent className="p-4">
           <Label className="mb-3 block">Access Mode</Label>
-          <Select value={selectedAuth} onValueChange={(v: UrlSettings["auth"]) => setSelectedAuth(v)}>
+          <Select value={selectedAuth} onValueChange={(v: AuthMode) => setSelectedAuth(v)}>
             <SelectTrigger className="w-full">
               <SelectValue />
             </SelectTrigger>

@@ -232,20 +232,25 @@ export class SpritesClient {
   // =====================================
 
   async createSession(name: string): Promise<Session> {
-    return this.request<Session>(`/sprites/${encodeURIComponent(name)}/sessions`, {
-      method: "POST",
-    })
+    // Creating a session is done through exec with detachable=true
+    // For now, this is a placeholder that could open a WebSocket session
+    throw new Error("Use terminal with detachable=true to create sessions")
   }
 
   async listSessions(name: string): Promise<Session[]> {
-    const response = await this.request<{ sessions: Session[] }>(
+    // Sessions are listed via the exec endpoint
+    const response = await this.request<Session[] | { sessions?: Session[] }>(
       `/sprites/${encodeURIComponent(name)}/sessions`
     )
+    // Handle both array and object response formats
+    if (Array.isArray(response)) {
+      return response
+    }
     return response.sessions || []
   }
 
   getSessionWebSocketUrl(name: string, sessionId: string): string {
-    return `wss://api.sprites.dev/v1/sprites/${encodeURIComponent(name)}/sessions/${sessionId}?token=${this.token}`
+    return `wss://api.sprites.dev/v1/sprites/${encodeURIComponent(name)}/exec/${sessionId}?token=${this.token}`
   }
 
   // =====================================

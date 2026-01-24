@@ -21,7 +21,14 @@ interface SessionsPanelProps {
   spriteName: string
 }
 
-function getSessionStatusVariant(status: Session["status"]) {
+function getSessionStatus(session: Session): "active" | "detached" | "completed" {
+  if (session.status) return session.status
+  // API uses isActive boolean
+  return session.isActive ? "active" : "completed"
+}
+
+function getSessionStatusVariant(session: Session) {
+  const status = getSessionStatus(session)
   switch (status) {
     case "active":
       return "running"
@@ -32,6 +39,12 @@ function getSessionStatusVariant(status: Session["status"]) {
     default:
       return "outline"
   }
+}
+
+function getSessionCreatedAt(session: Session): string {
+  if (session.created_at) return session.created_at
+  if (session.created) return new Date(session.created * 1000).toISOString()
+  return new Date().toISOString()
 }
 
 export function SessionsPanel({ spriteName }: SessionsPanelProps) {
@@ -61,8 +74,11 @@ export function SessionsPanel({ spriteName }: SessionsPanelProps) {
     }
   }
 
-  const activeSessions = sessions.filter(s => s.status === "active" || s.status === "detached")
-  const completedSessions = sessions.filter(s => s.status === "completed")
+  const activeSessions = sessions.filter(s => {
+    const status = getSessionStatus(s)
+    return status === "active" || status === "detached"
+  })
+  const completedSessions = sessions.filter(s => getSessionStatus(s) === "completed")
 
   return (
     <div className="space-y-4">
@@ -128,14 +144,14 @@ export function SessionsPanel({ spriteName }: SessionsPanelProps) {
                       <span className="font-mono text-sm truncate">
                         {session.command || "shell"}
                       </span>
-                      <Badge variant={getSessionStatusVariant(session.status)}>
-                        {session.status}
+                      <Badge variant={getSessionStatusVariant(session)}>
+                        {getSessionStatus(session)}
                       </Badge>
                     </div>
                     <div className="flex items-center gap-4 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <Clock className="h-3 w-3" />
-                        Started {formatRelativeTime(session.created_at)}
+                        Started {formatRelativeTime(getSessionCreatedAt(session))}
                       </span>
                     </div>
                     <div className="text-[10px] text-muted-foreground/60 mt-1 font-mono">
@@ -170,7 +186,7 @@ export function SessionsPanel({ spriteName }: SessionsPanelProps) {
                     </span>
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {formatRelativeTime(session.created_at)}
+                    {formatRelativeTime(getSessionCreatedAt(session))}
                   </div>
                   <Badge variant="stopped">completed</Badge>
                 </div>

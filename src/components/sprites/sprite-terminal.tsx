@@ -123,9 +123,8 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
       term.write("\x1b[0m") // Reset color
       term.write("\r\n")
 
-      // Connect WebSocket
+      // Connect WebSocket - use text mode like ghostty-web demo
       const ws = new WebSocket(wsUrl)
-      ws.binaryType = "arraybuffer"
       wsRef.current = ws
 
       ws.onopen = () => {
@@ -137,10 +136,20 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
       }
 
       ws.onmessage = (event) => {
+        console.log("[Terminal] Received:", typeof event.data, event.data instanceof ArrayBuffer ? `ArrayBuffer(${event.data.byteLength})` : JSON.stringify(event.data).slice(0, 100))
+
+        // Handle both binary and text data
         if (event.data instanceof ArrayBuffer) {
           const text = new TextDecoder().decode(event.data)
+          console.log("[Terminal] Decoded ArrayBuffer:", JSON.stringify(text).slice(0, 100))
           term.write(text)
+        } else if (event.data instanceof Blob) {
+          event.data.text().then((text) => {
+            console.log("[Terminal] Decoded Blob:", JSON.stringify(text).slice(0, 100))
+            term.write(text)
+          })
         } else if (typeof event.data === "string") {
+          // Try to parse as JSON for control messages
           try {
             const msg = JSON.parse(event.data)
             if (msg.type === "exit") {
@@ -148,8 +157,12 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
               setIsConnected(false)
             } else if (msg.error) {
               term.write(`\r\n\x1b[31m● Error: ${msg.error}\x1b[0m\r\n`)
+            } else {
+              // Unknown JSON, just write it
+              term.write(event.data)
             }
           } catch {
+            // Not JSON, write directly to terminal
             term.write(event.data)
           }
         }
@@ -271,7 +284,7 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
       <div
         ref={terminalRef}
         className="flex-1 overflow-hidden"
-        style={{ backgroundColor: "#0c0c0c", padding: "8px" }}
+        style={{ backgroundColor: "#0c0c0c", padding: "8px", minHeight: "300px" }}
         onClick={handleContainerClick}
       />
 

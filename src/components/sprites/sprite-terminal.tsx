@@ -194,16 +194,29 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
         }
       })
 
-      // Handle terminal resize
+      // Handle terminal resize with debounce
+      let lastCols = term.cols
+      let lastRows = term.rows
+      let resizeTimeout: NodeJS.Timeout | null = null
+
       const resizeObserver = new ResizeObserver(() => {
-        fitAddon.fit()
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({
-            type: "resize",
-            cols: term.cols,
-            rows: term.rows,
-          }))
-        }
+        // Debounce resize events
+        if (resizeTimeout) clearTimeout(resizeTimeout)
+        resizeTimeout = setTimeout(() => {
+          fitAddon.fit()
+          // Only send if size actually changed
+          if (term.cols !== lastCols || term.rows !== lastRows) {
+            lastCols = term.cols
+            lastRows = term.rows
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({
+                type: "resize",
+                cols: term.cols,
+                rows: term.rows,
+              }))
+            }
+          }
+        }, 100)
       })
 
       if (terminalRef.current) {

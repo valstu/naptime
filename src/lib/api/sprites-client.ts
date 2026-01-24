@@ -185,10 +185,46 @@ export class SpritesClient {
     })
   }
 
-  getExecWebSocketUrl(name: string): string {
-    // WebSocket connections go direct to the API - only token in URL
-    // Command and TTY settings are sent as first message after connecting
-    return `wss://api.sprites.dev/v1/sprites/${encodeURIComponent(name)}/exec?token=${encodeURIComponent(this.token)}`
+  getExecWebSocketUrl(
+    name: string,
+    options?: {
+      command?: string
+      args?: string[]
+      tty?: boolean
+      rows?: number
+      cols?: number
+    }
+  ): string {
+    // WebSocket URL format based on sprites-js SDK
+    const params = new URLSearchParams()
+
+    // Auth token (browsers can't set WebSocket headers)
+    params.set("token", this.token)
+
+    // Command path (defaults to /bin/bash for interactive shell)
+    const command = options?.command || "/bin/bash"
+    params.set("path", command)
+
+    // Command args - each arg is a separate 'cmd' param
+    // First cmd is the command itself
+    params.append("cmd", command)
+    if (options?.args) {
+      for (const arg of options.args) {
+        params.append("cmd", arg)
+      }
+    }
+
+    // Enable stdin for interactive input
+    params.set("stdin", "true")
+
+    // TTY mode for terminal
+    if (options?.tty !== false) {
+      params.set("tty", "true")
+      if (options?.rows) params.set("rows", String(options.rows))
+      if (options?.cols) params.set("cols", String(options.cols))
+    }
+
+    return `wss://api.sprites.dev/v1/sprites/${encodeURIComponent(name)}/exec?${params.toString()}`
   }
 
   // =====================================

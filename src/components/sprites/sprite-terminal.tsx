@@ -40,9 +40,7 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
   const { token } = useSprites()
   const terminalRef = useRef<HTMLDivElement>(null)
   const terminalInstance = useRef<any>(null)
-  const fitAddonRef = useRef<any>(null)
   const wsRef = useRef<WebSocket | null>(null)
-  const resizeHandlerRef = useRef<(() => void) | null>(null)
 
   const [isConnected, setIsConnected] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
@@ -59,16 +57,11 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
     setError(null)
 
     try {
-      // Dynamically import xterm
-      const { Terminal } = await import("@xterm/xterm")
-      const { FitAddon } = await import("@xterm/addon-fit")
-      const { WebLinksAddon } = await import("@xterm/addon-web-links")
+      // Dynamically import ghostty-web (it uses WASM)
+      const { init, Terminal } = await import("ghostty-web")
+      await init()
 
       // Clean up existing
-      if (resizeHandlerRef.current) {
-        window.removeEventListener("resize", resizeHandlerRef.current)
-        resizeHandlerRef.current = null
-      }
       if (terminalInstance.current) {
         terminalInstance.current.dispose()
       }
@@ -85,14 +78,11 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
       const term = new Terminal({
         fontSize: 14,
         fontFamily: "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace",
-        cursorBlink: true,
-        cursorStyle: "block",
         theme: {
           background: "#0c0c0c",
           foreground: "#e8e8e8",
           cursor: "#ff6b00",
           cursorAccent: "#0c0c0c",
-          selectionBackground: "#ff6b0040",
           black: "#1a1a1a",
           red: "#ff4444",
           green: "#00d4aa",
@@ -112,23 +102,15 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
         },
       })
 
-      // Add addons
-      const fitAddon = new FitAddon()
-      term.loadAddon(fitAddon)
-      term.loadAddon(new WebLinksAddon())
-
-      fitAddonRef.current = fitAddon
-
       term.open(terminalRef.current)
-      fitAddon.fit()
       terminalInstance.current = term
 
       // Get WebSocket URL through our proxy
       const wsUrl = getWebSocketProxyUrl(spriteName, token, {
         command: "/bin/bash",
         tty: true,
-        rows: term.rows,
-        cols: term.cols,
+        rows: term.rows || 24,
+        cols: term.cols || 80,
       })
 
       // Write welcome message
@@ -189,8 +171,9 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
         }
       }
 
-      // Handle terminal input
+      // Handle terminal input - ghostty-web uses onData like xterm
       term.onData((data: string) => {
+        console.log("[Terminal] Input:", JSON.stringify(data))
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(data)
         }
@@ -204,10 +187,6 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
   }, [token, spriteName])
 
   const disconnect = useCallback(() => {
-    if (resizeHandlerRef.current) {
-      window.removeEventListener("resize", resizeHandlerRef.current)
-      resizeHandlerRef.current = null
-    }
     if (wsRef.current) {
       wsRef.current.close()
       wsRef.current = null
@@ -225,9 +204,6 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
     connect()
 
     return () => {
-      if (resizeHandlerRef.current) {
-        window.removeEventListener("resize", resizeHandlerRef.current)
-      }
       if (wsRef.current) {
         wsRef.current.close()
       }

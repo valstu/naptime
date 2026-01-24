@@ -270,8 +270,9 @@ export function SpritesProvider({ children }: { children: React.ReactNode }) {
     try {
       const sessionList = await client.listSessions(spriteName)
       setSessions(sessionList)
-    } catch (err) {
-      console.error("Failed to fetch sessions:", err)
+    } catch {
+      // Sessions endpoint may not be available or configured - fail silently
+      setSessions([])
     }
   }, [getClient])
 

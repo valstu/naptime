@@ -79,8 +79,13 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
       term.open(terminalRef.current)
       terminalInstance.current = term
 
-      // Get WebSocket URL
-      const wsUrl = client.getExecWebSocketUrl(spriteName)
+      // Get WebSocket URL with terminal size
+      const wsUrl = client.getExecWebSocketUrl(spriteName, {
+        command: "/bin/bash",
+        tty: true,
+        rows: term.rows || 24,
+        cols: term.cols || 80,
+      })
 
       // Write welcome message
       term.write("\x1b[38;5;208m") // Orange color

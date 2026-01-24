@@ -185,9 +185,16 @@ export class SpritesClient {
     })
   }
 
-  getExecWebSocketUrl(name: string): string {
+  getExecWebSocketUrl(name: string, options?: { command?: string; tty?: boolean; rows?: number; cols?: number }): string {
     // WebSocket connections go direct to the API
-    return `wss://api.sprites.dev/v1/sprites/${encodeURIComponent(name)}/exec?token=${this.token}`
+    const params = new URLSearchParams()
+    params.set("token", this.token)
+    // Default to bash shell with TTY enabled
+    params.set("command", options?.command || "/bin/bash")
+    params.set("tty", String(options?.tty !== false))
+    if (options?.rows) params.set("tty_rows", String(options.rows))
+    if (options?.cols) params.set("tty_cols", String(options.cols))
+    return `wss://api.sprites.dev/v1/sprites/${encodeURIComponent(name)}/exec?${params.toString()}`
   }
 
   // =====================================

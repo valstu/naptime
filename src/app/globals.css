@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "@xterm/xterm/css/xterm.css";
 
 /* Nerdy/Teenage Engineering Inspired Design System */
 :root {

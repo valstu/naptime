@@ -40,6 +40,7 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
   const { token } = useSprites()
   const terminalRef = useRef<HTMLDivElement>(null)
   const terminalInstance = useRef<any>(null)
+  const fitAddonRef = useRef<any>(null)
   const wsRef = useRef<WebSocket | null>(null)
 
   const [isConnected, setIsConnected] = useState(false)
@@ -57,9 +58,10 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
     setError(null)
 
     try {
-      // Dynamically import ghostty-web (it uses WASM)
-      const { init, Terminal } = await import("ghostty-web")
-      await init()
+      // Dynamically import xterm
+      const { Terminal } = await import("@xterm/xterm")
+      const { FitAddon } = await import("@xterm/addon-fit")
+      const { WebLinksAddon } = await import("@xterm/addon-web-links")
 
       // Clean up existing terminal
       if (terminalInstance.current) {
@@ -78,11 +80,14 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
       const term = new Terminal({
         fontSize: 14,
         fontFamily: "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace",
+        cursorBlink: true,
+        cursorStyle: "block",
         theme: {
           background: "#0c0c0c",
           foreground: "#e8e8e8",
           cursor: "#ff6b00",
           cursorAccent: "#0c0c0c",
+          selectionBackground: "#ff6b0040",
           black: "#1a1a1a",
           red: "#ff4444",
           green: "#00d4aa",
@@ -102,15 +107,23 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
         },
       })
 
+      // Add addons
+      const fitAddon = new FitAddon()
+      term.loadAddon(fitAddon)
+      term.loadAddon(new WebLinksAddon())
+
+      fitAddonRef.current = fitAddon
+
       term.open(terminalRef.current)
+      fitAddon.fit()
       terminalInstance.current = term
 
       // Get WebSocket URL through our proxy
       const wsUrl = getWebSocketProxyUrl(spriteName, token, {
         command: "/bin/bash",
         tty: true,
-        rows: term.rows || 24,
-        cols: term.cols || 80,
+        rows: term.rows,
+        cols: term.cols,
       })
 
       // Write welcome message
@@ -173,25 +186,29 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
         }
       }
 
-      // Handle terminal input - send as raw text for TTY mode
+      // Handle terminal input
       term.onData((data: string) => {
         console.log("[Terminal] Sending data:", JSON.stringify(data))
         if (ws.readyState === WebSocket.OPEN) {
-          // In TTY mode, send raw text data
           ws.send(data)
         }
       })
 
       // Handle terminal resize
-      term.onResize?.((size: { cols: number; rows: number }) => {
+      const resizeObserver = new ResizeObserver(() => {
+        fitAddon.fit()
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({
             type: "resize",
-            cols: size.cols,
-            rows: size.rows,
+            cols: term.cols,
+            rows: term.rows,
           }))
         }
       })
+
+      if (terminalRef.current) {
+        resizeObserver.observe(terminalRef.current)
+      }
 
     } catch (err) {
       console.error("[Terminal] Init error:", err)
@@ -229,6 +246,10 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
 
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen)
+    // Re-fit after fullscreen toggle
+    setTimeout(() => {
+      fitAddonRef.current?.fit()
+    }, 100)
   }
 
   // Click to focus terminal
@@ -284,8 +305,8 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
       {/* Terminal container - click to focus */}
       <div
         ref={terminalRef}
-        className="flex-1 p-2 overflow-hidden cursor-text"
-        style={{ backgroundColor: "#0c0c0c" }}
+        className="flex-1 overflow-hidden"
+        style={{ backgroundColor: "#0c0c0c", padding: "8px" }}
         onClick={handleContainerClick}
       />
 

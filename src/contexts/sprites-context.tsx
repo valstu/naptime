@@ -64,13 +64,26 @@ export function SpritesProvider({ children }: { children: React.ReactNode }) {
   const [urlSettings, setUrlSettings] = useState<UrlSettings | null>(null)
   const [sessions, setSessions] = useState<Session[]>([])
 
-  // Initialize token from localStorage
+  // Initialize token from localStorage and auto-fetch sprites
   useEffect(() => {
     if (typeof window !== "undefined") {
       const savedToken = localStorage.getItem("sprites_token")
       if (savedToken) {
         setTokenState(savedToken)
         setSpritesToken(savedToken)
+        // Auto-fetch sprites after restoring token
+        const client = new SpritesClient(savedToken)
+        setIsLoading(true)
+        client.listAllSprites()
+          .then(allSprites => {
+            setSprites(allSprites)
+          })
+          .catch(err => {
+            setError(err instanceof Error ? err.message : "Failed to fetch sprites")
+          })
+          .finally(() => {
+            setIsLoading(false)
+          })
       }
     }
   }, [])

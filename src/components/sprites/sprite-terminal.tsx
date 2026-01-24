@@ -22,7 +22,10 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
 
   const connect = useCallback(async () => {
     const client = getClient()
-    if (!client || !terminalRef.current) return
+    if (!client || !terminalRef.current) {
+      setError("Not authenticated or terminal not ready")
+      return
+    }
 
     setIsConnecting(true)
     setError(null)
@@ -91,69 +94,72 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
 
       // Connect WebSocket
       const ws = new WebSocket(wsUrl)
+      ws.binaryType = "arraybuffer"
       wsRef.current = ws
 
       ws.onopen = () => {
         setIsConnected(true)
         setIsConnecting(false)
         term.write("\x1b[32m● Connected\x1b[0m\r\n\r\n")
-
-        // Send initial shell command
-        ws.send(JSON.stringify({
-          type: "start",
-          command: "/bin/bash",
-          args: ["-l"],
-          tty: true,
-          tty_rows: 24,
-          tty_cols: 80,
-        }))
-
-        // Focus terminal
         term.focus()
       }
 
       ws.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data)
-          if (msg.type === "stdout" || msg.type === "stderr") {
-            term.write(msg.data)
-          } else if (msg.type === "exit") {
-            term.write(`\r\n\x1b[33m● Process exited with code ${msg.exit_code}\x1b[0m\r\n`)
-            setIsConnected(false)
+        if (event.data instanceof ArrayBuffer) {
+          // Binary data - decode and write to terminal
+          const text = new TextDecoder().decode(event.data)
+          term.write(text)
+        } else if (typeof event.data === "string") {
+          try {
+            const msg = JSON.parse(event.data)
+            if (msg.type === "stdout" || msg.type === "stderr" || msg.output) {
+              term.write(msg.data || msg.output)
+            } else if (msg.type === "exit") {
+              term.write(`\r\n\x1b[33m● Process exited with code ${msg.exit_code || msg.code}\x1b[0m\r\n`)
+              setIsConnected(false)
+            } else if (msg.error) {
+              term.write(`\r\n\x1b[31m● Error: ${msg.error}\x1b[0m\r\n`)
+            }
+          } catch {
+            // If not JSON, write raw data
+            term.write(event.data)
           }
-        } catch {
-          // If not JSON, write raw data
-          term.write(event.data)
         }
       }
 
-      ws.onerror = () => {
-        setError("WebSocket connection failed")
+      ws.onerror = (e) => {
+        console.error("WebSocket error:", e)
+        setError("WebSocket connection failed - check console for details")
         setIsConnecting(false)
         term.write("\r\n\x1b[31m● Connection error\x1b[0m\r\n")
       }
 
-      ws.onclose = () => {
+      ws.onclose = (e) => {
         setIsConnected(false)
         setIsConnecting(false)
-        term.write("\r\n\x1b[33m● Disconnected\x1b[0m\r\n")
+        term.write(`\r\n\x1b[33m● Disconnected (code: ${e.code})\x1b[0m\r\n`)
       }
 
-      // Handle terminal input
+      // Handle terminal input - send raw data
       term.onData((data: string) => {
         if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "input", data }))
+          ws.send(data)
         }
       })
 
       // Handle terminal resize
       const resizeObserver = new ResizeObserver(() => {
         if (term.cols && term.rows && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({
-            type: "resize",
-            cols: term.cols,
-            rows: term.rows,
-          }))
+          // Try to send resize - some APIs expect JSON, some expect special format
+          try {
+            ws.send(JSON.stringify({
+              type: "resize",
+              cols: term.cols,
+              rows: term.rows,
+            }))
+          } catch {
+            // Ignore resize errors
+          }
         }
       })
 
@@ -162,6 +168,7 @@ export function SpriteTerminal({ spriteName }: SpriteTerminalProps) {
       }
 
     } catch (err) {
+      console.error("Terminal init error:", err)
       setError(err instanceof Error ? err.message : "Failed to initialize terminal")
       setIsConnecting(false)
     }

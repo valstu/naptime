@@ -239,9 +239,9 @@ export class SpritesClient {
 
   async listSessions(name: string): Promise<Session[]> {
     try {
-      // Sessions are listed via the exec endpoint
+      // Sessions are listed via /exec/sessions endpoint
       const response = await this.request<Session[] | { sessions?: Session[] }>(
-        `/sprites/${encodeURIComponent(name)}/sessions`
+        `/sprites/${encodeURIComponent(name)}/exec/sessions`
       )
       // Handle both array and object response formats
       if (Array.isArray(response)) {
@@ -263,9 +263,13 @@ export class SpritesClient {
   // =====================================
 
   async listCheckpoints(name: string): Promise<Checkpoint[]> {
-    const response = await this.request<{ checkpoints: Checkpoint[] }>(
+    const response = await this.request<Checkpoint[] | { checkpoints: Checkpoint[] }>(
       `/sprites/${encodeURIComponent(name)}/checkpoints`
     )
+    // Handle both array and object response formats
+    if (Array.isArray(response)) {
+      return response
+    }
     return response.checkpoints || []
   }
 
@@ -307,18 +311,18 @@ export class SpritesClient {
   // =====================================
 
   async getNetworkPolicy(name: string): Promise<NetworkPolicy> {
-    return this.request<NetworkPolicy>(`/sprites/${encodeURIComponent(name)}/policy/network`)
+    return this.request<NetworkPolicy>(`/sprites/${encodeURIComponent(name)}/policy`)
   }
 
   async updateNetworkPolicy(name: string, policy: NetworkPolicy): Promise<NetworkPolicy> {
-    return this.request<NetworkPolicy>(`/sprites/${encodeURIComponent(name)}/policy/network`, {
+    return this.request<NetworkPolicy>(`/sprites/${encodeURIComponent(name)}/policy`, {
       method: "POST",
       body: JSON.stringify(policy),
     })
   }
 
   async deleteNetworkPolicy(name: string): Promise<void> {
-    await this.request(`/sprites/${encodeURIComponent(name)}/policy/network`, {
+    await this.request(`/sprites/${encodeURIComponent(name)}/policy`, {
       method: "DELETE",
     })
   }

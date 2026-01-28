@@ -61,14 +61,15 @@ export interface ExecResult {
 export interface Session {
   id: number | string
   created_at?: string
-  created?: number  // Unix timestamp from API
+  created?: string | number  // ISO string or Unix timestamp from API
   command: string
   workdir?: string
   status?: "active" | "detached" | "completed"
-  isActive?: boolean  // API uses this instead of status
+  isActive?: boolean
+  is_active?: boolean  // API uses snake_case
   tty?: boolean
-  lastActivity?: number
-  bytesPerSecond?: number
+  last_activity?: string
+  bytes_per_second?: number
 }
 
 export interface ListOptions {

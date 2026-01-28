@@ -19,7 +19,9 @@ import type { Session } from "@/types/sprites"
 
 function getSessionStatus(session: Session): "active" | "detached" | "completed" {
   if (session.status) return session.status
-  return session.isActive ? "active" : "completed"
+  // API returns is_active (snake_case)
+  const isActive = session.isActive ?? (session as any).is_active
+  return isActive ? "active" : "detached"
 }
 
 function getSessionStatusVariant(session: Session) {
@@ -39,10 +41,11 @@ function getSessionStatusVariant(session: Session) {
 function getSessionCreatedAt(session: Session): string {
   try {
     if (session.created_at) return session.created_at
-    if (session.created && typeof session.created === 'number' && session.created > 0) {
-      const date = new Date(session.created * 1000)
-      if (!isNaN(date.getTime())) {
-        return date.toISOString()
+    if (session.created) {
+      // Handle both ISO string and Unix timestamp
+      if (typeof session.created === 'string') return session.created
+      if (typeof session.created === 'number' && session.created > 0) {
+        return new Date(session.created * 1000).toISOString()
       }
     }
     return new Date().toISOString()

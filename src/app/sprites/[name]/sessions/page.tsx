@@ -99,6 +99,9 @@ export default function SessionsPage() {
     try {
       await fetch(`/api/sprites/${spriteName}/sessions/${sessionId}`, {
         method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       })
       await fetchSessions(spriteName)
     } catch (err) {

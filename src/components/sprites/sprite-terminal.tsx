@@ -67,16 +67,24 @@ export function SpriteTerminal({
   const terminalRef = useRef<HTMLDivElement>(null)
   const terminalInstance = useRef<any>(null)
   const wsRef = useRef<WebSocket | null>(null)
+  const sessionIdRef = useRef<number | undefined>(initialSessionId)
+  const isConnectedRef = useRef(false)
 
   const [isConnected, setIsConnected] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [currentSessionId, setCurrentSessionId] = useState<number | undefined>(initialSessionId)
+  const [displaySessionId, setDisplaySessionId] = useState<number | undefined>(initialSessionId)
 
+  // Stable connect function - doesn't depend on changing state
   const connect = useCallback(async (attachToSession?: number) => {
     if (!token || !terminalRef.current) {
       setError("Not authenticated or terminal not ready")
+      return
+    }
+
+    // Prevent double connections
+    if (isConnectedRef.current) {
       return
     }
 
@@ -135,7 +143,8 @@ export function SpriteTerminal({
       const rows = 24
       const cols = 80
 
-      const sessionToAttach = attachToSession || currentSessionId
+      // Use provided session or the one from ref
+      const sessionToAttach = attachToSession ?? sessionIdRef.current
 
       // Get WebSocket URL through our proxy
       const wsUrl = getWebSocketProxyUrl(spriteName, token, {
@@ -166,6 +175,7 @@ export function SpriteTerminal({
       wsRef.current = ws
 
       ws.onopen = () => {
+        isConnectedRef.current = true
         setIsConnected(true)
         setIsConnecting(false)
         term.write("\x1b[32m● Connected\x1b[0m\r\n\r\n")
@@ -186,11 +196,13 @@ export function SpriteTerminal({
           try {
             const msg = JSON.parse(event.data)
             if (msg.type === "session_info") {
-              // Store session ID for potential reconnection
-              setCurrentSessionId(msg.session_id)
+              // Store session ID in ref (doesn't trigger re-render)
+              sessionIdRef.current = msg.session_id
+              setDisplaySessionId(msg.session_id)
               onSessionCreated?.(msg.session_id)
             } else if (msg.type === "exit") {
               term.write(`\r\n\x1b[33m● Process exited with code ${msg.exit_code || msg.code || 0}\x1b[0m\r\n`)
+              isConnectedRef.current = false
               setIsConnected(false)
             } else if (msg.type === "port") {
               // Port notification
@@ -212,11 +224,12 @@ export function SpriteTerminal({
       }
 
       ws.onclose = (e) => {
+        isConnectedRef.current = false
         setIsConnected(false)
         setIsConnecting(false)
         if (e.code !== 1000) {
           term.write(`\r\n\x1b[33m● Disconnected (code: ${e.code})\x1b[0m\r\n`)
-          if (currentSessionId && detachable) {
+          if (sessionIdRef.current && detachable) {
             term.write("\x1b[90mSession preserved - click reconnect to resume\x1b[0m\r\n")
           }
         }
@@ -235,33 +248,41 @@ export function SpriteTerminal({
       setError(err instanceof Error ? err.message : "Failed to initialize terminal")
       setIsConnecting(false)
     }
-  }, [token, spriteName, currentSessionId, detachable, onSessionCreated])
+  }, [token, spriteName, detachable, onSessionCreated])  // Note: sessionId removed from deps
 
   const disconnect = useCallback(() => {
     if (wsRef.current) {
       wsRef.current.close()
       wsRef.current = null
     }
+    isConnectedRef.current = false
     setIsConnected(false)
   }, [])
 
   const reconnect = useCallback(() => {
     disconnect()
     // Reconnect to same session if we have one, otherwise create new
-    setTimeout(() => connect(currentSessionId), 100)
-  }, [disconnect, connect, currentSessionId])
+    setTimeout(() => connect(sessionIdRef.current), 100)
+  }, [disconnect, connect])
 
   const newSession = useCallback(() => {
     disconnect()
-    setCurrentSessionId(undefined)
+    sessionIdRef.current = undefined
+    setDisplaySessionId(undefined)
     setTimeout(() => connect(), 100)
   }, [disconnect, connect])
 
-  // Connect on mount
+  // Connect on mount only (empty deps to prevent reconnect loops)
   useEffect(() => {
-    connect()
+    // Small delay to ensure DOM is ready
+    const timer = setTimeout(() => {
+      if (!isConnectedRef.current) {
+        connect()
+      }
+    }, 100)
 
     return () => {
+      clearTimeout(timer)
       if (wsRef.current) {
         wsRef.current.close()
       }
@@ -269,7 +290,7 @@ export function SpriteTerminal({
         terminalInstance.current.dispose()
       }
     }
-  }, [connect])
+  }, [])  // Empty deps - only run on mount/unmount
 
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen)
@@ -295,17 +316,17 @@ export function SpriteTerminal({
           <span>
             {isConnected ? "Connected" : isConnecting ? "Connecting..." : "Disconnected"}
           </span>
-          {currentSessionId && (
+          {displaySessionId && (
             <>
               <span className="text-border">│</span>
-              <span className="font-mono text-muted-foreground/70">#{currentSessionId}</span>
+              <span className="font-mono text-muted-foreground/70">#{displaySessionId}</span>
             </>
           )}
           <span className="text-border">│</span>
           <span className="font-mono">{spriteName}</span>
         </div>
         <div className="flex items-center gap-1">
-          {currentSessionId && (
+          {displaySessionId && (
             <Button
               variant="ghost"
               size="sm"
@@ -323,7 +344,7 @@ export function SpriteTerminal({
             className="h-7 px-2"
             onClick={reconnect}
             disabled={isConnecting}
-            title={currentSessionId ? "Reconnect to session" : "Reconnect"}
+            title={displaySessionId ? "Reconnect to session" : "Reconnect"}
           >
             <RotateCcw className="h-3 w-3" />
           </Button>
@@ -362,8 +383,8 @@ export function SpriteTerminal({
       <div className="px-4 py-1 border-t border-border bg-muted/30 text-xs text-muted-foreground">
         {isConnected ? (
           <span>Interactive shell • {detachable ? "Session persists on disconnect" : "Ephemeral session"}</span>
-        ) : currentSessionId ? (
-          <span>Session #{currentSessionId} • Click reconnect to resume</span>
+        ) : displaySessionId ? (
+          <span>Session #{displaySessionId} • Click reconnect to resume</span>
         ) : (
           <span>Click reconnect to start a new session</span>
         )}

@@ -14,8 +14,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   }
 
   try {
-    // Sessions are listed via the exec endpoint in Sprites API
-    const response = await fetch(`${SPRITES_API}/sprites/${encodeURIComponent(name)}/exec`, {
+    // Sessions are listed via /exec/sessions endpoint
+    const response = await fetch(`${SPRITES_API}/sprites/${encodeURIComponent(name)}/exec/sessions`, {
       headers: {
         Authorization: token,
         "Content-Type": "application/json",

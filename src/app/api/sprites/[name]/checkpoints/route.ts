@@ -9,11 +9,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   return proxyRequest(request, `/sprites/${encodeURIComponent(name)}/checkpoints`)
 }
 
-// POST /api/sprites/[name]/checkpoints - Create checkpoint (uses /checkpoint endpoint)
+// POST /api/sprites/[name]/checkpoints - Create checkpoint
 export async function POST(request: NextRequest, { params }: RouteParams) {
   const { name } = await params
   const body = await request.text()
-  return proxyStreamRequest(request, `/sprites/${encodeURIComponent(name)}/checkpoint`, {
+  return proxyStreamRequest(request, `/sprites/${encodeURIComponent(name)}/checkpoints`, {
     method: "POST",
     body,
   })

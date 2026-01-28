@@ -86,6 +86,10 @@ function handleExecProxy(
     if (query.cols) params.set("cols", query.cols as string)
     if (query.detachable) params.set("detachable", query.detachable as string)
 
+    // Set TERM for color support (zsh handles this cleanly)
+    params.append("env", "TERM=xterm-256color")
+    params.append("env", "COLORTERM=truecolor")
+
     spritesWsUrl = `${SPRITES_API_WS}/v1/sprites/${encodeURIComponent(spriteName)}/exec?${params.toString()}`
     console.log(`[WS] New session on ${spriteName}`)
   }

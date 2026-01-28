@@ -103,7 +103,8 @@ export default function SessionsPage() {
     }
   }
 
-  const activeSessions = sessions.filter(s => {
+  // Only show sessions that can be attached to
+  const attachableSessions = sessions.filter(s => {
     const status = getSessionStatus(s)
     return status === "active" || status === "detached"
   })
@@ -134,9 +135,9 @@ export default function SessionsPage() {
               <ChevronRight className="h-4 w-4" />
             )}
             Sessions
-            {activeSessions.length > 0 && (
+            {attachableSessions.length > 0 && (
               <Badge variant="outline" className="ml-2">
-                {activeSessions.length} active
+                {attachableSessions.length}
               </Badge>
             )}
           </div>
@@ -163,28 +164,25 @@ export default function SessionsPage() {
 
         {sessionsExpanded && (
           <div className="px-4 pb-4 max-h-48 overflow-y-auto">
-            {sessions.length === 0 ? (
+            {attachableSessions.length === 0 ? (
               <p className="text-xs text-muted-foreground py-2">
-                No sessions yet. A new session will be created when you connect.
+                No active sessions.
               </p>
             ) : (
               <div className="space-y-1">
-                {sessions.map((session) => {
+                {attachableSessions.map((session) => {
                   const status = getSessionStatus(session)
                   const isCurrent = activeSessionId === session.id
-                  const canAttach = status !== "completed"
 
                   return (
                     <div
                       key={session.id}
-                      onClick={() => canAttach && handleAttach(session.id)}
+                      onClick={() => handleAttach(session.id)}
                       className={cn(
-                        "flex items-center gap-3 p-2 rounded border transition-colors group",
+                        "flex items-center gap-3 p-2 rounded border transition-colors group cursor-pointer",
                         isCurrent
                           ? "border-primary bg-primary/5"
-                          : canAttach
-                          ? "border-border hover:border-primary/50 hover:bg-muted/30 cursor-pointer"
-                          : "border-border opacity-50",
+                          : "border-border hover:border-primary/50 hover:bg-muted/30",
                       )}
                     >
                       <Terminal className={cn(

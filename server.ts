@@ -25,7 +25,7 @@ app.prepare().then(() => {
   server.on("upgrade", (request: IncomingMessage, socket, head) => {
     const { pathname, query } = parse(request.url || "", true)
 
-    // Handle /ws/exec/* paths (new session or attach to existing)
+    // Only handle /ws/exec/* paths - let Next.js handle everything else (including HMR)
     // Format: /ws/exec/{spriteName} or /ws/exec/{spriteName}/{sessionId}
     if (pathname?.startsWith("/ws/exec/")) {
       const pathParts = pathname.replace("/ws/exec/", "").split("/")
@@ -42,10 +42,8 @@ app.prepare().then(() => {
       wss.handleUpgrade(request, socket, head, (clientWs) => {
         handleExecProxy(clientWs, spriteName, token, query, sessionId)
       })
-    } else {
-      socket.write("HTTP/1.1 404 Not Found\r\n\r\n")
-      socket.destroy()
     }
+    // Don't handle other WebSocket upgrades - let Next.js handle them (HMR, etc.)
   })
 
   server.listen(port, () => {

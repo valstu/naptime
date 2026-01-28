@@ -103,11 +103,8 @@ export default function SessionsPage() {
     }
   }
 
-  // Only show sessions that can be attached to
-  const attachableSessions = sessions.filter(s => {
-    const status = getSessionStatus(s)
-    return status === "active" || status === "detached"
-  })
+  // Show all sessions - API will reject if not attachable
+  const attachableSessions = sessions
 
   return (
     <div className="flex flex-col h-full">

@@ -306,13 +306,8 @@ th {
   font-variant-numeric: tabular-nums;
 }
 
-/* Ghostty-web terminal styles */
+/* Ghostty-web terminal container */
 .ghostty-terminal {
-  width: 100% !important;
-  height: 100% !important;
-}
-
-.ghostty-terminal canvas {
-  width: 100% !important;
-  height: 100% !important;
+  width: 100%;
+  height: 100%;
 }

@@ -14,10 +14,11 @@ export async function DELETE(
   }
 
   try {
+    // Sprites API uses POST to /kill endpoint, not DELETE
     const response = await fetch(
-      `${SPRITES_API_BASE}/sprites/${encodeURIComponent(name)}/exec/${sessionId}`,
+      `${SPRITES_API_BASE}/sprites/${encodeURIComponent(name)}/exec/${sessionId}/kill`,
       {
-        method: "DELETE",
+        method: "POST",
         headers: {
           Authorization: authHeader,
         },

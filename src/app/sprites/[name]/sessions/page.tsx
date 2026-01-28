@@ -1,0 +1,223 @@
+"use client"
+
+import { useEffect, useState, useCallback } from "react"
+import { useParams } from "next/navigation"
+import { useSprites } from "@/contexts/sprites-context"
+import { SpriteTerminal } from "@/components/sprites/sprite-terminal"
+import { Card, CardContent } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import {
+  Terminal,
+  Clock,
+  Play,
+  RefreshCw,
+  ChevronRight,
+  ChevronDown,
+} from "lucide-react"
+import { formatRelativeTime, cn } from "@/lib/utils"
+import type { Session } from "@/types/sprites"
+
+function getSessionStatus(session: Session): "active" | "detached" | "completed" {
+  if (session.status) return session.status
+  return session.isActive ? "active" : "completed"
+}
+
+function getSessionStatusVariant(session: Session) {
+  const status = getSessionStatus(session)
+  switch (status) {
+    case "active":
+      return "running"
+    case "detached":
+      return "sleeping"
+    case "completed":
+      return "stopped"
+    default:
+      return "outline"
+  }
+}
+
+function getSessionCreatedAt(session: Session): string {
+  try {
+    if (session.created_at) return session.created_at
+    if (session.created && typeof session.created === 'number' && session.created > 0) {
+      const date = new Date(session.created * 1000)
+      if (!isNaN(date.getTime())) {
+        return date.toISOString()
+      }
+    }
+    return new Date().toISOString()
+  } catch {
+    return new Date().toISOString()
+  }
+}
+
+export default function SessionsPage() {
+  const params = useParams()
+  const spriteName = params.name as string
+  const { sessions, fetchSessions, isAuthenticated } = useSprites()
+
+  const [activeSessionId, setActiveSessionId] = useState<number | string | undefined>()
+  const [terminalKey, setTerminalKey] = useState(0) // Force remount terminal
+  const [sessionsExpanded, setSessionsExpanded] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+
+  useEffect(() => {
+    if (isAuthenticated && spriteName) {
+      fetchSessions(spriteName)
+    }
+  }, [isAuthenticated, spriteName, fetchSessions])
+
+  const handleAttach = useCallback((sessionId: number | string) => {
+    setActiveSessionId(sessionId)
+    setTerminalKey(k => k + 1) // Force terminal remount
+  }, [])
+
+  const handleSessionCreated = useCallback((sessionId: number | string) => {
+    setActiveSessionId(sessionId)
+    // Refresh sessions list
+    fetchSessions(spriteName)
+  }, [fetchSessions, spriteName])
+
+  const handleNewTerminal = useCallback(() => {
+    setActiveSessionId(undefined)
+    setTerminalKey(k => k + 1)
+  }, [])
+
+  const handleRefreshSessions = async () => {
+    setIsRefreshing(true)
+    try {
+      await fetchSessions(spriteName)
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
+
+  const activeSessions = sessions.filter(s => {
+    const status = getSessionStatus(s)
+    return status === "active" || status === "detached"
+  })
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Terminal - takes most space */}
+      <div className="flex-1 min-h-0">
+        <SpriteTerminal
+          key={terminalKey}
+          spriteName={spriteName}
+          sessionId={activeSessionId}
+          detachable={true}
+          onSessionCreated={handleSessionCreated}
+        />
+      </div>
+
+      {/* Sessions panel - collapsible */}
+      <div className="border-t border-border bg-card">
+        <button
+          onClick={() => setSessionsExpanded(!sessionsExpanded)}
+          className="w-full flex items-center justify-between px-4 py-2 hover:bg-muted/50 transition-colors"
+        >
+          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            {sessionsExpanded ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+            Sessions
+            {activeSessions.length > 0 && (
+              <Badge variant="outline" className="ml-2">
+                {activeSessions.length} active
+              </Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2"
+              onClick={handleRefreshSessions}
+              disabled={isRefreshing}
+            >
+              <RefreshCw className={cn("h-3 w-3", isRefreshing && "animate-spin")} />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 px-2 text-xs"
+              onClick={handleNewTerminal}
+            >
+              New Terminal
+            </Button>
+          </div>
+        </button>
+
+        {sessionsExpanded && (
+          <div className="px-4 pb-4 max-h-48 overflow-y-auto">
+            {sessions.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-2">
+                No sessions yet. A new session will be created when you connect.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {sessions.map((session) => {
+                  const status = getSessionStatus(session)
+                  const isActive = activeSessionId === session.id
+                  const canAttach = status === "active" || status === "detached"
+
+                  return (
+                    <div
+                      key={session.id}
+                      className={cn(
+                        "flex items-center gap-3 p-2 rounded border transition-colors",
+                        isActive
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:border-border/80",
+                        status === "completed" && "opacity-50"
+                      )}
+                    >
+                      <Terminal className={cn(
+                        "h-4 w-4 shrink-0",
+                        isActive ? "text-primary" : "text-muted-foreground"
+                      )} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs truncate">
+                            {session.command || "shell"}
+                          </span>
+                          <Badge variant={getSessionStatusVariant(session)} className="text-[10px]">
+                            {status}
+                          </Badge>
+                          {isActive && (
+                            <Badge variant="outline" className="text-[10px]">
+                              current
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                          <Clock className="h-2.5 w-2.5" />
+                          {formatRelativeTime(getSessionCreatedAt(session))}
+                          <span className="font-mono">#{session.id}</span>
+                        </div>
+                      </div>
+                      {canAttach && !isActive && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2"
+                          onClick={() => handleAttach(session.id)}
+                        >
+                          <Play className="h-3 w-3 mr-1" />
+                          <span className="text-xs">Attach</span>
+                        </Button>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

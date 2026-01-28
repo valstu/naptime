@@ -1,19 +1,25 @@
 "use client"
 
-import { useState } from "react"
-import { AsciiHeader } from "./ascii-header"
-import { Sidebar } from "./sidebar"
-import { CreateSpriteDialog } from "@/components/sprites/create-sprite-dialog"
+import { useEffect, useState } from "react"
 import { useSprites } from "@/contexts/sprites-context"
+import { AsciiHeader } from "@/components/layout/ascii-header"
+import { Sidebar } from "@/components/layout/sidebar"
+import { CreateSpriteDialog } from "@/components/sprites/create-sprite-dialog"
 import { LoginForm } from "@/components/sprites/login-form"
 
-interface DashboardLayoutProps {
+export default function SpritesLayout({
+  children,
+}: {
   children: React.ReactNode
-}
-
-export function DashboardLayout({ children }: DashboardLayoutProps) {
-  const { isAuthenticated } = useSprites()
+}) {
+  const { isAuthenticated, fetchSprites } = useSprites()
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchSprites()
+    }
+  }, [isAuthenticated, fetchSprites])
 
   if (!isAuthenticated) {
     return (
@@ -31,7 +37,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       <AsciiHeader />
       <div className="flex-1 flex overflow-hidden">
         <Sidebar onCreateClick={() => setCreateDialogOpen(true)} />
-        <main className="flex-1 overflow-auto">
+        <main className="flex-1 overflow-hidden">
           {children}
         </main>
       </div>

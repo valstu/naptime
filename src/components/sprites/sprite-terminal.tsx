@@ -8,9 +8,9 @@ import { cn } from "@/lib/utils"
 
 interface SpriteTerminalProps {
   spriteName: string
-  sessionId?: number  // Optional - attach to existing session
+  sessionId?: number | string  // Optional - attach to existing session
   detachable?: boolean  // Create a persistent session
-  onSessionCreated?: (sessionId: number) => void  // Callback when new session is created
+  onSessionCreated?: (sessionId: number | string) => void  // Callback when new session is created
 }
 
 function getWebSocketProxyUrl(
@@ -22,7 +22,7 @@ function getWebSocketProxyUrl(
     rows?: number
     cols?: number
     detachable?: boolean
-    sessionId?: number
+    sessionId?: number | string
   }
 ): string {
   const protocol = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss:" : "ws:"
@@ -67,7 +67,7 @@ export function SpriteTerminal({
   const terminalRef = useRef<HTMLDivElement>(null)
   const terminalInstance = useRef<any>(null)
   const wsRef = useRef<WebSocket | null>(null)
-  const sessionIdRef = useRef<number | undefined>(initialSessionId)
+  const sessionIdRef = useRef<number | string | undefined>(initialSessionId)
   const isConnectedRef = useRef(false)
   const isMountedRef = useRef(true)
 
@@ -75,10 +75,10 @@ export function SpriteTerminal({
   const [isConnecting, setIsConnecting] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [displaySessionId, setDisplaySessionId] = useState<number | undefined>(initialSessionId)
+  const [displaySessionId, setDisplaySessionId] = useState<number | string | undefined>(initialSessionId)
 
   // Stable connect function - doesn't depend on changing state
-  const connect = useCallback(async (attachToSession?: number) => {
+  const connect = useCallback(async (attachToSession?: number | string) => {
     if (!token || !terminalRef.current) {
       setError("Not authenticated or terminal not ready")
       return

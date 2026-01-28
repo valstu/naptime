@@ -1,5 +1,7 @@
 "use client"
 
+import Link from "next/link"
+import { usePathname } from "next/navigation"
 import { useSprites } from "@/contexts/sprites-context"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -20,7 +22,6 @@ function getStatusBadgeVariant(status: SpriteStatus) {
     case "sleeping":
       return "sleeping"
     case "starting":
-      return "warning"
     case "stopping":
       return "warning"
     case "stopped":
@@ -29,14 +30,13 @@ function getStatusBadgeVariant(status: SpriteStatus) {
   }
 }
 
-function SpriteListItem({ sprite, isSelected, onSelect }: {
+function SpriteListItem({ sprite, isSelected }: {
   sprite: Sprite
   isSelected: boolean
-  onSelect: () => void
 }) {
   return (
-    <button
-      onClick={onSelect}
+    <Link
+      href={`/sprites/${sprite.name}/sessions`}
       className={cn(
         "w-full flex items-center gap-3 px-3 py-2 text-left transition-colors",
         "border-l-2 border-transparent",
@@ -63,7 +63,7 @@ function SpriteListItem({ sprite, isSelected, onSelect }: {
         isSelected ? "text-foreground" : "text-muted-foreground",
         isSelected && "translate-x-0.5"
       )} />
-    </button>
+    </Link>
   )
 }
 
@@ -72,7 +72,13 @@ interface SidebarProps {
 }
 
 export function Sidebar({ onCreateClick }: SidebarProps) {
-  const { sprites, isLoading, fetchSprites, selectedSprite, selectSprite } = useSprites()
+  const pathname = usePathname()
+  const { sprites, isLoading, fetchSprites } = useSprites()
+
+  // Extract current sprite name from pathname
+  const currentSpriteName = pathname.startsWith("/sprites/")
+    ? decodeURIComponent(pathname.split("/")[2])
+    : null
 
   return (
     <div className="w-64 border-r border-border bg-card flex flex-col">
@@ -121,8 +127,7 @@ export function Sidebar({ onCreateClick }: SidebarProps) {
               <SpriteListItem
                 key={sprite.name}
                 sprite={sprite}
-                isSelected={selectedSprite?.name === sprite.name}
-                onSelect={() => selectSprite(sprite)}
+                isSelected={currentSpriteName === sprite.name}
               />
             ))
           )}

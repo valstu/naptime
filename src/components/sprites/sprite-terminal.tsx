@@ -69,6 +69,7 @@ export function SpriteTerminal({
   const wsRef = useRef<WebSocket | null>(null)
   const sessionIdRef = useRef<number | undefined>(initialSessionId)
   const isConnectedRef = useRef(false)
+  const isMountedRef = useRef(true)
 
   const [isConnected, setIsConnected] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
@@ -96,18 +97,25 @@ export function SpriteTerminal({
       const { init, Terminal } = await import("ghostty-web")
       await init()
 
+      // Check if component is still mounted after async operations
+      if (!isMountedRef.current || !terminalRef.current) {
+        return
+      }
+
       // Clean up existing
       if (terminalInstance.current) {
-        terminalInstance.current.dispose()
+        try {
+          terminalInstance.current.dispose()
+        } catch {
+          // Ignore dispose errors
+        }
       }
       if (wsRef.current) {
         wsRef.current.close()
       }
 
       // Clear the container
-      if (terminalRef.current) {
-        terminalRef.current.innerHTML = ""
-      }
+      terminalRef.current.innerHTML = ""
 
       // Create terminal with our theme
       const term = new Terminal({
@@ -274,20 +282,29 @@ export function SpriteTerminal({
 
   // Connect on mount only (empty deps to prevent reconnect loops)
   useEffect(() => {
+    isMountedRef.current = true
+
     // Small delay to ensure DOM is ready
     const timer = setTimeout(() => {
-      if (!isConnectedRef.current) {
+      if (!isConnectedRef.current && isMountedRef.current) {
         connect()
       }
     }, 100)
 
     return () => {
+      isMountedRef.current = false
       clearTimeout(timer)
       if (wsRef.current) {
         wsRef.current.close()
+        wsRef.current = null
       }
       if (terminalInstance.current) {
-        terminalInstance.current.dispose()
+        try {
+          terminalInstance.current.dispose()
+        } catch {
+          // Ignore dispose errors on unmount
+        }
+        terminalInstance.current = null
       }
     }
   }, [])  // Empty deps - only run on mount/unmount
@@ -367,8 +384,8 @@ export function SpriteTerminal({
       {/* Terminal container - click to focus */}
       <div
         ref={terminalRef}
-        className="flex-1 overflow-hidden"
-        style={{ backgroundColor: "#0c0c0c", padding: "8px", minHeight: "300px" }}
+        className="flex-1 overflow-hidden w-full ghostty-terminal"
+        style={{ backgroundColor: "#0c0c0c" }}
         onClick={handleContainerClick}
       />
 

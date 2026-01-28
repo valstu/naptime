@@ -42,9 +42,18 @@ function getSessionStatusVariant(session: Session) {
 }
 
 function getSessionCreatedAt(session: Session): string {
-  if (session.created_at) return session.created_at
-  if (session.created) return new Date(session.created * 1000).toISOString()
-  return new Date().toISOString()
+  try {
+    if (session.created_at) return session.created_at
+    if (session.created && typeof session.created === 'number' && session.created > 0) {
+      const date = new Date(session.created * 1000)
+      if (!isNaN(date.getTime())) {
+        return date.toISOString()
+      }
+    }
+    return new Date().toISOString()
+  } catch {
+    return new Date().toISOString()
+  }
 }
 
 export function SessionsPanel({ spriteName }: SessionsPanelProps) {

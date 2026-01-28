@@ -164,20 +164,6 @@ export function SpriteTerminal({
         sessionId: sessionToAttach,
       })
 
-      // Write welcome message
-      term.write("\x1b[38;5;208m") // Orange color
-      term.write("┌─────────────────────────────────────────────────────┐\r\n")
-      term.write(`│  SPRITES TERMINAL - ${spriteName.padEnd(30)}│\r\n`)
-      term.write("├─────────────────────────────────────────────────────┤\r\n")
-      if (sessionToAttach) {
-        term.write(`│  Attaching to session ${String(sessionToAttach).padEnd(28)}│\r\n`)
-      } else {
-        term.write(`│  Creating ${detachable ? "persistent" : "ephemeral"} session...                   │\r\n`)
-      }
-      term.write("└─────────────────────────────────────────────────────┘\r\n")
-      term.write("\x1b[0m") // Reset color
-      term.write("\r\n")
-
       // Connect WebSocket
       const ws = new WebSocket(wsUrl)
       wsRef.current = ws
@@ -186,8 +172,14 @@ export function SpriteTerminal({
         isConnectedRef.current = true
         setIsConnected(true)
         setIsConnecting(false)
-        term.write("\x1b[32m● Connected\x1b[0m\r\n\r\n")
         term.focus()
+
+        // Wait for shell initialization to complete, then clear the garbage
+        setTimeout(() => {
+          // Send clear command to clean up shell init output
+          const encoder = new TextEncoder()
+          ws.send(encoder.encode("clear\n"))
+        }, 150)
       }
 
       ws.onmessage = (event) => {

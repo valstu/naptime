@@ -174,12 +174,13 @@ export function SpriteTerminal({
         setIsConnecting(false)
         term.focus()
 
-        // Wait for shell initialization to complete, then clear the garbage
+        // Wait for shell initialization, then reset terminal properly
         setTimeout(() => {
-          // Send clear command to clean up shell init output
           const encoder = new TextEncoder()
-          ws.send(encoder.encode("clear\n"))
-        }, 150)
+          // Reset terminal state and clear screen
+          term.write("\x1bc") // Full terminal reset
+          ws.send(encoder.encode("clear; echo\n"))
+        }, 200)
       }
 
       ws.onmessage = (event) => {

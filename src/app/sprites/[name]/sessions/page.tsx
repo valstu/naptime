@@ -4,16 +4,15 @@ import { useEffect, useState, useCallback } from "react"
 import { useParams } from "next/navigation"
 import { useSprites } from "@/contexts/sprites-context"
 import { SpriteTerminal } from "@/components/sprites/sprite-terminal"
-import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
   Terminal,
   Clock,
-  Play,
   RefreshCw,
   ChevronRight,
   ChevronDown,
+  X,
 } from "lucide-react"
 import { formatRelativeTime, cn } from "@/lib/utils"
 import type { Session } from "@/types/sprites"
@@ -55,10 +54,10 @@ function getSessionCreatedAt(session: Session): string {
 export default function SessionsPage() {
   const params = useParams()
   const spriteName = params.name as string
-  const { sessions, fetchSessions, isAuthenticated } = useSprites()
+  const { sessions, fetchSessions, isAuthenticated, token } = useSprites()
 
   const [activeSessionId, setActiveSessionId] = useState<number | string | undefined>()
-  const [terminalKey, setTerminalKey] = useState(0) // Force remount terminal
+  const [terminalKey, setTerminalKey] = useState(0)
   const [sessionsExpanded, setSessionsExpanded] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
 
@@ -70,12 +69,11 @@ export default function SessionsPage() {
 
   const handleAttach = useCallback((sessionId: number | string) => {
     setActiveSessionId(sessionId)
-    setTerminalKey(k => k + 1) // Force terminal remount
+    setTerminalKey(k => k + 1)
   }, [])
 
   const handleSessionCreated = useCallback((sessionId: number | string) => {
     setActiveSessionId(sessionId)
-    // Refresh sessions list
     fetchSessions(spriteName)
   }, [fetchSessions, spriteName])
 
@@ -90,6 +88,18 @@ export default function SessionsPage() {
       await fetchSessions(spriteName)
     } finally {
       setIsRefreshing(false)
+    }
+  }
+
+  const handleDeleteSession = async (sessionId: number | string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      await fetch(`/api/sprites/${spriteName}/sessions/${sessionId}`, {
+        method: "DELETE",
+      })
+      await fetchSessions(spriteName)
+    } catch (err) {
+      console.error("Failed to delete session:", err)
     }
   }
 
@@ -112,7 +122,7 @@ export default function SessionsPage() {
       </div>
 
       {/* Sessions panel - collapsible */}
-      <div className="border-t border-border bg-card">
+      <div className="border-t border-border bg-card shrink-0">
         <button
           onClick={() => setSessionsExpanded(!sessionsExpanded)}
           className="w-full flex items-center justify-between px-4 py-2 hover:bg-muted/50 transition-colors"
@@ -158,26 +168,28 @@ export default function SessionsPage() {
                 No sessions yet. A new session will be created when you connect.
               </p>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-1">
                 {sessions.map((session) => {
                   const status = getSessionStatus(session)
-                  const isActive = activeSessionId === session.id
-                  const canAttach = status === "active" || status === "detached"
+                  const isCurrent = activeSessionId === session.id
+                  const canAttach = status !== "completed"
 
                   return (
                     <div
                       key={session.id}
+                      onClick={() => canAttach && handleAttach(session.id)}
                       className={cn(
-                        "flex items-center gap-3 p-2 rounded border transition-colors",
-                        isActive
+                        "flex items-center gap-3 p-2 rounded border transition-colors group",
+                        isCurrent
                           ? "border-primary bg-primary/5"
-                          : "border-border hover:border-border/80",
-                        status === "completed" && "opacity-50"
+                          : canAttach
+                          ? "border-border hover:border-primary/50 hover:bg-muted/30 cursor-pointer"
+                          : "border-border opacity-50",
                       )}
                     >
                       <Terminal className={cn(
                         "h-4 w-4 shrink-0",
-                        isActive ? "text-primary" : "text-muted-foreground"
+                        isCurrent ? "text-primary" : "text-muted-foreground"
                       )} />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
@@ -187,7 +199,7 @@ export default function SessionsPage() {
                           <Badge variant={getSessionStatusVariant(session)} className="text-[10px]">
                             {status}
                           </Badge>
-                          {isActive && (
+                          {isCurrent && (
                             <Badge variant="outline" className="text-[10px]">
                               current
                             </Badge>
@@ -199,17 +211,15 @@ export default function SessionsPage() {
                           <span className="font-mono">#{session.id}</span>
                         </div>
                       </div>
-                      {canAttach && !isActive && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 px-2"
-                          onClick={() => handleAttach(session.id)}
-                        >
-                          <Play className="h-3 w-3 mr-1" />
-                          <span className="text-xs">Attach</span>
-                        </Button>
-                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 hover:bg-error/20 hover:text-error"
+                        onClick={(e) => handleDeleteSession(session.id, e)}
+                        title="Delete session"
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
                     </div>
                   )
                 })}

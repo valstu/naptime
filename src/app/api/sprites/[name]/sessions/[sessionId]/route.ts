@@ -7,10 +7,9 @@ export async function DELETE(
   { params }: { params: Promise<{ name: string; sessionId: string }> }
 ) {
   const { name, sessionId } = await params
-  const token = request.headers.get("authorization")?.replace("Bearer ", "") ||
-    request.cookies.get("sprites_token")?.value
+  const authHeader = request.headers.get("authorization")
 
-  if (!token) {
+  if (!authHeader) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
@@ -20,7 +19,7 @@ export async function DELETE(
       {
         method: "DELETE",
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: authHeader,
         },
       }
     )

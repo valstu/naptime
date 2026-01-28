@@ -238,15 +238,20 @@ export class SpritesClient {
   }
 
   async listSessions(name: string): Promise<Session[]> {
-    // Sessions are listed via the exec endpoint
-    const response = await this.request<Session[] | { sessions?: Session[] }>(
-      `/sprites/${encodeURIComponent(name)}/sessions`
-    )
-    // Handle both array and object response formats
-    if (Array.isArray(response)) {
-      return response
+    try {
+      // Sessions are listed via the exec endpoint
+      const response = await this.request<Session[] | { sessions?: Session[] }>(
+        `/sprites/${encodeURIComponent(name)}/sessions`
+      )
+      // Handle both array and object response formats
+      if (Array.isArray(response)) {
+        return response
+      }
+      return response.sessions || []
+    } catch {
+      // Return empty array if sessions endpoint fails
+      return []
     }
-    return response.sessions || []
   }
 
   getSessionWebSocketUrl(name: string, sessionId: string): string {

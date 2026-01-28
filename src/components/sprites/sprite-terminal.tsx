@@ -173,6 +173,15 @@ export function SpriteTerminal({
         setIsConnected(true)
         setIsConnecting(false)
         term.focus()
+
+        // Only for new sessions (not reattach), set TERM after shell init
+        if (!sessionToAttach) {
+          setTimeout(() => {
+            const encoder = new TextEncoder()
+            // Set TERM for colors, then clear screen
+            ws.send(encoder.encode("export TERM=xterm-256color COLORTERM=truecolor; clear\n"))
+          }, 300)
+        }
       }
 
       ws.onmessage = (event) => {

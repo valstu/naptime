@@ -305,3 +305,9 @@ th {
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
+
+/* Ghostty-web terminal container */
+.ghostty-terminal {
+  width: 100%;
+  height: 100%;
+}

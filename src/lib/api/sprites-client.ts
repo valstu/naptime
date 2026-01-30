@@ -12,7 +12,8 @@ import type {
   UrlSettings,
 } from "@/types/sprites"
 
-const API_BASE = process.env.NEXT_PUBLIC_SPRITES_API_URL || "https://api.sprites.dev/v1"
+// Use local API proxy to avoid CORS issues
+const API_BASE = "/api"
 
 export class SpritesApiError extends Error {
   constructor(
@@ -89,7 +90,6 @@ export class SpritesClient {
     }
 
     const decoder = new TextDecoder()
-    const self = this
 
     return (async function* () {
       let buffer = ""
@@ -137,27 +137,29 @@ export class SpritesClient {
     return this.request<Sprite>(`/sprites/${encodeURIComponent(name)}`)
   }
 
-  async listSprites(options?: ListOptions): Promise<PaginatedResponse<Sprite>> {
+  async listSprites(options?: ListOptions): Promise<{ sprites: Sprite[]; cursor?: string; has_more?: boolean }> {
     const params = new URLSearchParams()
     if (options?.prefix) params.set("prefix", options.prefix)
     if (options?.limit) params.set("limit", options.limit.toString())
     if (options?.cursor) params.set("cursor", options.cursor)
 
     const query = params.toString()
-    return this.request<PaginatedResponse<Sprite>>(`/sprites${query ? `?${query}` : ""}`)
+    return this.request<{ sprites: Sprite[]; cursor?: string; has_more?: boolean }>(`/sprites${query ? `?${query}` : ""}`)
   }
 
   async listAllSprites(prefix?: string): Promise<Sprite[]> {
-    const sprites: Sprite[] = []
+    const allSprites: Sprite[] = []
     let cursor: string | undefined
 
     do {
       const response = await this.listSprites({ prefix, cursor })
-      sprites.push(...response.items)
+      // API returns sprites array, not items
+      const spriteList = response.sprites || []
+      allSprites.push(...spriteList)
       cursor = response.cursor
     } while (cursor)
 
-    return sprites
+    return allSprites
   }
 
   async deleteSprite(name: string): Promise<void> {
@@ -183,9 +185,46 @@ export class SpritesClient {
     })
   }
 
-  getExecWebSocketUrl(name: string): string {
-    const wsBase = this.baseUrl.replace("https://", "wss://").replace("http://", "ws://")
-    return `${wsBase}/sprites/${encodeURIComponent(name)}/exec?token=${this.token}`
+  getExecWebSocketUrl(
+    name: string,
+    options?: {
+      command?: string
+      args?: string[]
+      tty?: boolean
+      rows?: number
+      cols?: number
+    }
+  ): string {
+    // WebSocket URL format based on sprites-js SDK
+    const params = new URLSearchParams()
+
+    // Auth token (browsers can't set WebSocket headers)
+    params.set("token", this.token)
+
+    // Command path (defaults to /bin/bash for interactive shell)
+    const command = options?.command || "/bin/bash"
+    params.set("path", command)
+
+    // Command args - each arg is a separate 'cmd' param
+    // First cmd is the command itself
+    params.append("cmd", command)
+    if (options?.args) {
+      for (const arg of options.args) {
+        params.append("cmd", arg)
+      }
+    }
+
+    // Enable stdin for interactive input
+    params.set("stdin", "true")
+
+    // TTY mode for terminal
+    if (options?.tty !== false) {
+      params.set("tty", "true")
+      if (options?.rows) params.set("rows", String(options.rows))
+      if (options?.cols) params.set("cols", String(options.cols))
+    }
+
+    return `wss://api.sprites.dev/v1/sprites/${encodeURIComponent(name)}/exec?${params.toString()}`
   }
 
   // =====================================
@@ -193,21 +232,30 @@ export class SpritesClient {
   // =====================================
 
   async createSession(name: string): Promise<Session> {
-    return this.request<Session>(`/sprites/${encodeURIComponent(name)}/sessions`, {
-      method: "POST",
-    })
+    // Creating a session is done through exec with detachable=true
+    // For now, this is a placeholder that could open a WebSocket session
+    throw new Error("Use terminal with detachable=true to create sessions")
   }
 
   async listSessions(name: string): Promise<Session[]> {
-    const response = await this.request<{ sessions: Session[] }>(
-      `/sprites/${encodeURIComponent(name)}/sessions`
-    )
-    return response.sessions || []
+    try {
+      // Sessions are listed via /exec/sessions endpoint
+      const response = await this.request<Session[] | { sessions?: Session[] }>(
+        `/sprites/${encodeURIComponent(name)}/exec/sessions`
+      )
+      // Handle both array and object response formats
+      if (Array.isArray(response)) {
+        return response
+      }
+      return response.sessions || []
+    } catch {
+      // Return empty array if sessions endpoint fails
+      return []
+    }
   }
 
   getSessionWebSocketUrl(name: string, sessionId: string): string {
-    const wsBase = this.baseUrl.replace("https://", "wss://").replace("http://", "ws://")
-    return `${wsBase}/sprites/${encodeURIComponent(name)}/sessions/${sessionId}?token=${this.token}`
+    return `wss://api.sprites.dev/v1/sprites/${encodeURIComponent(name)}/exec/${sessionId}?token=${this.token}`
   }
 
   // =====================================
@@ -215,9 +263,13 @@ export class SpritesClient {
   // =====================================
 
   async listCheckpoints(name: string): Promise<Checkpoint[]> {
-    const response = await this.request<{ checkpoints: Checkpoint[] }>(
+    const response = await this.request<Checkpoint[] | { checkpoints: Checkpoint[] }>(
       `/sprites/${encodeURIComponent(name)}/checkpoints`
     )
+    // Handle both array and object response formats
+    if (Array.isArray(response)) {
+      return response
+    }
     return response.checkpoints || []
   }
 
@@ -231,7 +283,7 @@ export class SpritesClient {
     name: string,
     checkpointName?: string
   ): Promise<AsyncGenerator<ProgressEvent>> {
-    return this.streamRequest(`/sprites/${encodeURIComponent(name)}/checkpoint`, {
+    return this.streamRequest(`/sprites/${encodeURIComponent(name)}/checkpoints`, {
       method: "POST",
       body: JSON.stringify({ name: checkpointName }),
     })
@@ -259,18 +311,18 @@ export class SpritesClient {
   // =====================================
 
   async getNetworkPolicy(name: string): Promise<NetworkPolicy> {
-    return this.request<NetworkPolicy>(`/sprites/${encodeURIComponent(name)}/policy/network`)
+    return this.request<NetworkPolicy>(`/sprites/${encodeURIComponent(name)}/policy`)
   }
 
   async updateNetworkPolicy(name: string, policy: NetworkPolicy): Promise<NetworkPolicy> {
-    return this.request<NetworkPolicy>(`/sprites/${encodeURIComponent(name)}/policy/network`, {
+    return this.request<NetworkPolicy>(`/sprites/${encodeURIComponent(name)}/policy`, {
       method: "POST",
       body: JSON.stringify(policy),
     })
   }
 
   async deleteNetworkPolicy(name: string): Promise<void> {
-    await this.request(`/sprites/${encodeURIComponent(name)}/policy/network`, {
+    await this.request(`/sprites/${encodeURIComponent(name)}/policy`, {
       method: "DELETE",
     })
   }
@@ -295,8 +347,7 @@ export class SpritesClient {
   // =====================================
 
   getPortTunnelWebSocketUrl(name: string, port: number): string {
-    const wsBase = this.baseUrl.replace("https://", "wss://").replace("http://", "ws://")
-    return `${wsBase}/sprites/${encodeURIComponent(name)}/tunnel/${port}?token=${this.token}`
+    return `wss://api.sprites.dev/v1/sprites/${encodeURIComponent(name)}/tunnel/${port}?token=${this.token}`
   }
 }
 
